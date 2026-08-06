@@ -1,0 +1,12 @@
+{
+  "name": "Taquería POS",
+  "short_name": "Taquería",
+  "description": "Sistema de administración para taquería: comandas, mesas, cobro, cortes de caja, personal y contaduría.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#b23a2e",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

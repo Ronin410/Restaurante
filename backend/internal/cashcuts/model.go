@@ -60,3 +60,8 @@ type CashCut struct {
 type CutInput struct {
 	CountedCash *float64 `json:"counted_cash"`
 }
+
+type CloseShiftResult struct {
+	Shift Shift   `json:"shift"`
+	Cut   CashCut `json:"cut"`
+}

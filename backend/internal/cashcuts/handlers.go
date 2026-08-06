@@ -99,7 +99,7 @@ func (h *Handler) closeShift(w http.ResponseWriter, r *http.Request) {
 	}
 	claims, _ := authn.FromContext(r.Context())
 	h.audit.Log(claims.UserID, "close", "cash_shift", id, fmt.Sprintf("diferencia=%.2f", derefFloat(cut.Difference)))
-	httpx.JSON(w, http.StatusOK, map[string]interface{}{"shift": shift, "cut": cut})
+	httpx.JSON(w, http.StatusOK, CloseShiftResult{Shift: shift, Cut: cut})
 }
 
 func (h *Handler) xCut(w http.ResponseWriter, r *http.Request) {
