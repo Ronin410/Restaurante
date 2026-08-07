@@ -1,56 +1,89 @@
-// Package dbx maneja la conexión a la base de datos y la ejecución de
-// migraciones. Usa SQLite (driver puro Go, sin cgo) para que el sistema
-// corra en cualquier lugar sin dependencias externas; el acceso a datos del
-// resto de la aplicación pasa por SQL estándar para facilitar, a futuro,
-// migrar a PostgreSQL cuando se requiera escalar a varias sucursales.
+// Package dbx maneja la conexión a PostgreSQL y la ejecución de
+// migraciones.
+//
+// El resto de la aplicación (los store.go de cada módulo) escribe sus
+// consultas con placeholders al estilo SQLite/MySQL ("?"), heredados de
+// cuando este proyecto usaba SQLite embebido. En vez de reescribir las más
+// de 200 consultas a la sintaxis "$1, $2, ..." que exige el driver de
+// Postgres, DB.rebind() traduce los placeholders de forma transparente, así
+// que el resto del código no cambió al migrar de motor.
 package dbx
 
 import (
 	"database/sql"
 	"embed"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 //go:embed all:migrations
 var migrationsFS embed.FS
 
-// Open abre (creando si es necesario) la base de datos en dbPath y aplica
-// las migraciones pendientes.
-func Open(dbPath string) (*sql.DB, error) {
-	if dbPath != ":memory:" {
-		if dir := filepath.Dir(dbPath); dir != "." {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return nil, fmt.Errorf("creando directorio de datos: %w", err)
-			}
+// DB envuelve *sql.DB reescribiendo placeholders "?" a "$1, $2, ...". Los
+// demás métodos de *sql.DB (Close, Ping, Begin, etc.) quedan disponibles tal
+// cual por estar embebido.
+type DB struct {
+	*sql.DB
+}
+
+func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
+	return db.DB.Exec(rebind(query), args...)
+}
+
+func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	return db.DB.Query(rebind(query), args...)
+}
+
+func (db *DB) QueryRow(query string, args ...interface{}) *sql.Row {
+	return db.DB.QueryRow(rebind(query), args...)
+}
+
+// rebind convierte cada "?" en "$1", "$2", etc. Ninguna de las consultas de
+// este proyecto usa "?" dentro de un literal de texto, así que una
+// sustitución posicional simple es suficiente (no hace falta un parser SQL).
+func rebind(query string) string {
+	if !strings.Contains(query, "?") {
+		return query
+	}
+	var b strings.Builder
+	b.Grow(len(query) + 8)
+	n := 0
+	for _, r := range query {
+		if r == '?' {
+			n++
+			b.WriteByte('$')
+			b.WriteString(strconv.Itoa(n))
+			continue
 		}
+		b.WriteRune(r)
 	}
+	return b.String()
+}
 
-	// WAL permite lecturas concurrentes mientras hay una escritura en curso
-	// y busy_timeout hace que SQLite reintente en vez de fallar de inmediato
-	// con "database is locked" si dos peticiones coinciden.
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
+// Open conecta a Postgres usando dsn (ver config.BuildDSN) y aplica las
+// migraciones pendientes.
+func Open(dsn string) (*DB, error) {
+	sqlDB, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("abriendo base de datos: %w", err)
+		return nil, fmt.Errorf("abriendo conexión a la base de datos: %w", err)
 	}
-	// SQLite solo soporta un escritor a la vez. Además de limitar el pool,
-	// el código de acceso a datos debe evitar anidar una consulta dentro
-	// del bucle de otra (agotar/cerrar el cursor externo antes de abrir uno
-	// nuevo), o una sola conexión puede quedar interbloqueada consigo misma.
-	db.SetMaxOpenConns(1)
+	if err := sqlDB.Ping(); err != nil {
+		return nil, fmt.Errorf("no se pudo conectar a la base de datos: %w", err)
+	}
 
+	db := &DB{DB: sqlDB}
 	if err := migrate(db); err != nil {
 		return nil, err
 	}
 	return db, nil
 }
 
-func migrate(db *sql.DB) error {
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')))`); err != nil {
+func migrate(db *DB) error {
+	if _, err := db.DB.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
 		return fmt.Errorf("creando tabla de migraciones: %w", err)
 	}
 
@@ -68,7 +101,7 @@ func migrate(db *sql.DB) error {
 
 	for _, name := range names {
 		var exists int
-		if err := db.QueryRow(`SELECT COUNT(1) FROM schema_migrations WHERE name = ?`, name).Scan(&exists); err != nil {
+		if err := db.DB.QueryRow(`SELECT COUNT(1) FROM schema_migrations WHERE name = $1`, name).Scan(&exists); err != nil {
 			return err
 		}
 		if exists > 0 {
@@ -78,7 +111,7 @@ func migrate(db *sql.DB) error {
 		if err != nil {
 			return fmt.Errorf("leyendo migración %s: %w", name, err)
 		}
-		tx, err := db.Begin()
+		tx, err := db.DB.Begin()
 		if err != nil {
 			return err
 		}
@@ -86,7 +119,7 @@ func migrate(db *sql.DB) error {
 			tx.Rollback()
 			return fmt.Errorf("aplicando migración %s: %w", name, err)
 		}
-		if _, err := tx.Exec(`INSERT INTO schema_migrations (name) VALUES (?)`, name); err != nil {
+		if _, err := tx.Exec(`INSERT INTO schema_migrations (name) VALUES ($1)`, name); err != nil {
 			tx.Rollback()
 			return err
 		}

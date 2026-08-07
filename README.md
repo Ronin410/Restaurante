@@ -7,6 +7,10 @@ por roles y reportes en tiempo real. Implementado a partir de
 
 - **Backend:** Go (API REST) — [`backend/`](backend/)
 - **Frontend:** React + TypeScript (Vite) — [`frontend/`](frontend/)
+- **Base de datos:** PostgreSQL
+
+¿Quieres correrlo con **Podman** (sin `podman-compose`, tres contenedores
+en puertos no estándar)? Ve directo a **[PODMAN.md](PODMAN.md)**.
 
 ---
 
@@ -19,15 +23,16 @@ Navegador / tablet (React SPA, PWA instalable)
 API REST en Go (chi router, JWT)
         │
         ▼
-SQLite (archivo local, WAL)
+PostgreSQL
 ```
 
 - **Backend:** Go 1.25, router [chi](https://github.com/go-chi/chi), JWT
-  (`golang-jwt`) + bcrypt para autenticación, SQLite puro-Go
-  (`modernc.org/sqlite`, sin cgo) como base de datos. El acceso a datos usa
-  SQL estándar (sin ORM) para que migrar a PostgreSQL en el futuro —cuando
-  se necesite escalar a varias sucursales— sea un cambio acotado al paquete
-  `internal/dbx` y a los `store.go` de cada módulo.
+  (`golang-jwt`) + bcrypt para autenticación, PostgreSQL como base de datos
+  (driver `pgx`). El acceso a datos usa SQL estándar (sin ORM); los
+  `store.go` de cada módulo siguen escribiendo sus consultas con
+  placeholders `?` como en SQLite (de cuando el proyecto empezó ahí) —
+  `internal/dbx.DB` los traduce a `$1, $2, ...` de forma transparente, así
+  que no hay cientos de consultas reescritas por el cambio de motor.
 - **Frontend:** React 19 + TypeScript, Vite, `react-router-dom` para rutas,
   `@tanstack/react-query` para datos remotos, CSS propio (sin librería de
   componentes) con variables de tema claro/oscuro.
@@ -56,20 +61,36 @@ el backend hace cumplir los permisos en cada endpoint (no solo en la UI).
 
 ## 2. Cómo correr el proyecto en desarrollo
 
+Con Podman (recomendado, no requiere instalar Go/Node/Postgres a mano):
+**[PODMAN.md](PODMAN.md)**. Lo de abajo es para correrlo directo en tu
+máquina.
+
 ### Backend
+
+Necesitas un PostgreSQL accesible (local, Podman, o el que sea). Con Podman
+suelto, sin nada más:
+
+```bash
+podman run -d --name taqueria-db -p 6543:6543 \
+  -e POSTGRES_USER=taqueria -e POSTGRES_PASSWORD=taqueria -e POSTGRES_DB=taqueria \
+  docker.io/library/postgres:16-alpine postgres -c port=6543
+```
+
+Luego:
 
 ```bash
 cd backend
 go run ./cmd/seed     # crea datos de demo (usuarios, mesas, catálogo) — solo la primera vez
-go run ./cmd/server   # arranca la API en :8080 (o el puerto de $PORT)
+go run ./cmd/server   # arranca la API en :9090 (o el puerto de $PORT)
 ```
 
 Variables de entorno (ver `backend/.env.example`):
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `PORT` | `8080` | Puerto HTTP |
-| `DB_PATH` | `./data/taqueria.db` | Ruta del archivo SQLite |
+| `PORT` | `9090` | Puerto HTTP (no estándar a propósito, ver [PODMAN.md](PODMAN.md)) |
+| `DATABASE_URL` | — | DSN completo de Postgres; si se define, ignora las variables `PG*` de abajo |
+| `PGHOST` / `PGPORT` / `PGUSER` / `PGPASSWORD` / `PGDATABASE` / `PGSSLMODE` | `localhost` / `6543` / `taqueria` / `taqueria` / `taqueria` / `disable` | Piezas del DSN si no defines `DATABASE_URL` |
 | `JWT_SECRET` | (valor de desarrollo) | Secreto para firmar tokens — **cambiar en producción** |
 | `ALLOWED_ORIGIN` | `*` | Origen permitido por CORS (poner la URL del frontend en producción) |
 
@@ -93,9 +114,12 @@ npm install
 npm run dev   # http://localhost:5173, apunta a VITE_API_URL (ver .env.development)
 ```
 
-`frontend/.env.development` ya apunta a `http://localhost:8080/api/v1`. Para
+`frontend/.env.development` ya apunta a `http://localhost:9090/api/v1`. Para
 producción, `VITE_API_URL` normalmente se deja vacío y el frontend se sirve
 detrás de un proxy inverso que expone la API en `/api/v1` del mismo origen.
+Si lo empaquetas con Podman, ojo: `VITE_API_URL` se incrusta en el build
+(`--build-arg`, no variable de entorno del contenedor) — ver
+[PODMAN.md](PODMAN.md).
 
 ---
 
@@ -110,12 +134,18 @@ go test ./...
 
 Incluye pruebas unitarias (auth/JWT, cálculo de totales, ocupación de
 mesas) y una suite de integración (`internal/app/app_test.go`) que levanta
-el router completo contra una base SQLite en memoria y recorre los flujos
-de negocio reales vía HTTP: login y roles, mesas → comanda → tandas → KDS →
+el router completo contra un **PostgreSQL real** y recorre los flujos de
+negocio reales vía HTTP: login y roles, mesas → comanda → tandas → KDS →
 cuenta → descuento autorizado → pagos mixtos → cierre → corte de caja Z →
 KPIs → bitácora; además de reglas de autorización (cancelar requiere
 supervisor y motivo, no se puede cerrar una cuenta con saldo pendiente,
 etc.).
+
+Estas pruebas necesitan Postgres alcanzable — por defecto usan la misma
+base que levanta `podman/run.sh` (`postgres://taqueria:taqueria@localhost:6543/taqueria_test`);
+para apuntar a otra instancia exporta `TEST_DATABASE_URL`. Si no hay
+ningún Postgres disponible, las pruebas se omiten (`SKIP`) en vez de
+fallar.
 
 ### Frontend (Vitest + Testing Library)
 
@@ -175,10 +205,12 @@ Background Sync (soporte desigual entre navegadores/tablets):
 
 ## 6. Próximos pasos sugeridos para producción
 
-- Migrar de SQLite a PostgreSQL si se agregan varias sucursales
-  concurrentes (el acceso a datos ya está aislado por módulo para que el
-  cambio sea localizado).
 - Poner el backend detrás de HTTPS y ajustar `JWT_SECRET`/`ALLOWED_ORIGIN`.
+- Ninguna de las consultas usa transacciones explícitas (heredado de cuando
+  el proyecto usaba SQLite con una sola conexión, donde no hacía falta);
+  con Postgres y varios workers concurrentes de verdad, vale la pena
+  envolver en transacción las operaciones multi-tabla (cerrar cuenta +
+  liberar mesa, registrar pago + recalcular totales, etc.).
 - Contratar un PAC para CFDI real y una impresora térmica ESC/POS si se
   requiere ticket impreso físico.
 - Definir política de respaldo automático de la base de datos (la

@@ -2,7 +2,9 @@ package employees
 
 import (
 	"database/sql"
+
 	"errors"
+	"github.com/ronin410/restaurante/backend/internal/dbx"
 
 	"github.com/ronin410/restaurante/backend/internal/authn"
 )
@@ -11,10 +13,10 @@ var ErrNotFound = errors.New("empleado no encontrado")
 var ErrEmailTaken = errors.New("el correo ya está registrado")
 
 type Store struct {
-	db *sql.DB
+	db *dbx.DB
 }
 
-func NewStore(db *sql.DB) *Store {
+func NewStore(db *dbx.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -80,15 +82,15 @@ func (s *Store) Create(in CreateUserInput, passwordHash string) (User, error) {
 	if err == nil && existing.ID != 0 {
 		return User{}, ErrEmailTaken
 	}
-	res, err := s.db.Exec(
-		`INSERT INTO users (name, email, password_hash, role, position, salary, hire_date, active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+	var id int
+	err = s.db.QueryRow(
+		`INSERT INTO users (name, email, password_hash, role, position, salary, hire_date, active) VALUES (?, ?, ?, ?, ?, ?, ?, 1) RETURNING id`,
 		in.Name, in.Email, passwordHash, string(in.Role), in.Position, in.Salary, in.HireDate,
-	)
+	).Scan(&id)
 	if err != nil {
 		return User{}, err
 	}
-	id, _ := res.LastInsertId()
-	row, err := s.GetByID(int(id))
+	row, err := s.GetByID(id)
 	if err != nil {
 		return User{}, err
 	}
@@ -140,12 +142,12 @@ func (s *Store) Update(id int, in UpdateUserInput) (User, error) {
 // ---- Asistencia ----
 
 func (s *Store) ClockIn(userID int) (Attendance, error) {
-	res, err := s.db.Exec(`INSERT INTO attendance (user_id, clock_in) VALUES (?, datetime('now'))`, userID)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO attendance (user_id, clock_in) VALUES (?, datetime('now')) RETURNING id`, userID).Scan(&id)
 	if err != nil {
 		return Attendance{}, err
 	}
-	id, _ := res.LastInsertId()
-	return s.getAttendance(int(id))
+	return s.getAttendance(id)
 }
 
 func (s *Store) ClockOut(attendanceID int) (Attendance, error) {
@@ -197,15 +199,15 @@ func (s *Store) ListAttendance(userID int, from, to string) ([]Attendance, error
 // ---- Incidencias ----
 
 func (s *Store) CreateIncident(userID, createdBy int, in CreateIncidentInput) (Incident, error) {
-	res, err := s.db.Exec(
-		`INSERT INTO incidents (user_id, type, date, note, created_by) VALUES (?, ?, ?, ?, ?)`,
+	var id int
+	err := s.db.QueryRow(
+		`INSERT INTO incidents (user_id, type, date, note, created_by) VALUES (?, ?, ?, ?, ?) RETURNING id`,
 		userID, in.Type, in.Date, in.Note, createdBy,
-	)
+	).Scan(&id)
 	if err != nil {
 		return Incident{}, err
 	}
-	id, _ := res.LastInsertId()
-	return s.getIncident(int(id))
+	return s.getIncident(id)
 }
 
 func (s *Store) getIncident(id int) (Incident, error) {

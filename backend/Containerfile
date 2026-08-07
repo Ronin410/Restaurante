@@ -1,0 +1,27 @@
+# Backend (API Go) — build multi-stage, binario estático, corre sin root.
+# Compatible con `podman build` y `docker build` por igual.
+
+FROM docker.io/library/golang:1.25-alpine AS build
+WORKDIR /src
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+# CGO_ENABLED=0: el driver de Postgres (pgx) es Go puro, no necesita cgo;
+# el binario resultante no depende de libc y corre en cualquier base.
+RUN CGO_ENABLED=0 go build -o /out/server ./cmd/server
+RUN CGO_ENABLED=0 go build -o /out/seed ./cmd/seed
+
+FROM docker.io/library/alpine:3.20
+RUN adduser -D -u 10001 taqueria
+COPY --from=build /out/server /usr/local/bin/server
+COPY --from=build /out/seed /usr/local/bin/seed
+USER taqueria
+
+# Puerto no estándar a propósito (ver README/PODMAN.md); se puede
+# sobreescribir con `-e PORT=...` al correr el contenedor.
+ENV PORT=9090
+EXPOSE 9090
+
+ENTRYPOINT ["/usr/local/bin/server"]

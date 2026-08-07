@@ -13,10 +13,11 @@ frontend/coverage/
 frontend/.vite/
 frontend/*.local
 
-# Env
+# Env: .env y overrides locales quedan fuera; .env.example/.env.development
+# (sin secretos reales, solo config compartida por el equipo) sí se versionan.
 .env
-.env.*
-!.env.example
+.env.local
+.env.*.local
 
 # OS/editor
 .DS_Store

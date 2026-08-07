@@ -2,8 +2,10 @@ package cashcuts
 
 import (
 	"database/sql"
+
 	"encoding/json"
 	"errors"
+	"github.com/ronin410/restaurante/backend/internal/dbx"
 )
 
 var ErrNotFound = errors.New("turno de caja no encontrado")
@@ -11,10 +13,10 @@ var ErrCutNotFound = errors.New("corte no encontrado")
 var ErrAlreadyOpen = errors.New("ya existe un turno de caja abierto para este cajero")
 
 type Store struct {
-	db *sql.DB
+	db *dbx.DB
 }
 
-func NewStore(db *sql.DB) *Store {
+func NewStore(db *dbx.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -36,12 +38,12 @@ func (s *Store) HasOpenShift(cashierID int) (bool, error) {
 }
 
 func (s *Store) OpenShift(cashierID int, openingFund float64) (Shift, error) {
-	res, err := s.db.Exec(`INSERT INTO cash_shifts (cashier_id, opening_fund) VALUES (?, ?)`, cashierID, openingFund)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO cash_shifts (cashier_id, opening_fund) VALUES (?, ?) RETURNING id`, cashierID, openingFund).Scan(&id)
 	if err != nil {
 		return Shift{}, err
 	}
-	id, _ := res.LastInsertId()
-	return s.GetShift(int(id))
+	return s.GetShift(id)
 }
 
 const shiftCols = `s.id, s.cashier_id, u.name, s.opening_fund, s.opened_at, s.closed_at, s.counted_cash, s.status`
@@ -210,15 +212,15 @@ func (s *Store) CreateCut(shiftID int, cutType string, countedCash *float64, cre
 	if err != nil {
 		return CashCut{}, err
 	}
-	res, err := s.db.Exec(
-		`INSERT INTO cash_cuts (shift_id, type, totals_json, expected_cash, counted_cash, difference, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+	var id int
+	err = s.db.QueryRow(
+		`INSERT INTO cash_cuts (shift_id, type, totals_json, expected_cash, counted_cash, difference, created_by) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 		shiftID, cutType, string(raw), expected, countedCash, diff, createdBy,
-	)
+	).Scan(&id)
 	if err != nil {
 		return CashCut{}, err
 	}
-	id, _ := res.LastInsertId()
-	return s.GetCut(int(id))
+	return s.GetCut(id)
 }
 
 func scanCut(row interface{ Scan(...interface{}) error }) (CashCut, error) {

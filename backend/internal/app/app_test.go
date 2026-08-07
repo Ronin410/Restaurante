@@ -1,16 +1,25 @@
 package app_test
 
 // Suite de pruebas de integración: levanta el router completo contra una
-// base de datos SQLite en memoria y ejercita los flujos de negocio de cada
+// base de datos PostgreSQL real y ejercita los flujos de negocio de cada
 // módulo a través de la API HTTP real (igual que lo haría el frontend).
+//
+// A diferencia de cuando el proyecto usaba SQLite, estas pruebas necesitan
+// un Postgres alcanzable. Por defecto usan la misma base que arranca
+// `podman/run.sh` (ver PODMAN.md); para apuntar a otra instancia (CI, un
+// Postgres local en otro puerto, etc.) exporta TEST_DATABASE_URL. Si no hay
+// ningún Postgres disponible, las pruebas se omiten (t.Skip) en vez de
+// fallar, para que `go test ./...` no truene en un checkout sin base de
+// datos configurada.
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,19 +32,41 @@ import (
 type testEnv struct {
 	t       *testing.T
 	handler http.Handler
-	db      *sql.DB
+	db      *dbx.DB
 	authMgr *authn.Manager
 	tokens  map[string]string // role -> token (un usuario de ejemplo por rol)
 	userIDs map[string]int
 }
 
+func testDSN() string {
+	if v := os.Getenv("TEST_DATABASE_URL"); v != "" {
+		return v
+	}
+	return "postgres://taqueria:taqueria@localhost:6543/taqueria_test?sslmode=disable"
+}
+
+// allTables se usa para vaciar la base entre pruebas (RESTART IDENTITY hace
+// que los ids autogenerados vuelvan a empezar en 1, para que las
+// aserciones con ids fijos sean estables entre corridas).
+var allTables = []string{
+	"audit_logs", "invoices", "inventory_movements", "inventory_items", "purchases", "expenses",
+	"discounts", "payments", "order_item_modifiers", "order_items", "accounts", "orders",
+	"cash_cuts", "cash_shifts", "table_transfers", "table_sessions", "tables_", "zones",
+	"product_modifier_groups", "modifier_options", "modifier_groups", "products", "categories",
+	"shifts_schedule", "incidents", "attendance", "users",
+}
+
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
-	db, err := dbx.Open(":memory:")
+	db, err := dbx.Open(testDSN())
 	if err != nil {
-		t.Fatalf("abriendo base de datos de prueba: %v", err)
+		t.Skipf("sin Postgres de pruebas disponible (%v); levanta uno con podman/run.sh o exporta TEST_DATABASE_URL", err)
 	}
 	t.Cleanup(func() { db.Close() })
+
+	if _, err := db.Exec("TRUNCATE " + strings.Join(allTables, ", ") + " RESTART IDENTITY CASCADE"); err != nil {
+		t.Fatalf("limpiando base de datos de prueba: %v", err)
+	}
 
 	cfg := config.Config{JWTSecret: "test-secret", TokenTTL: time.Hour, AllowedOrigin: "*"}
 	handler := app.New(db, cfg)
@@ -71,13 +102,13 @@ func (e *testEnv) seedUser(name, email, password, role string) int {
 	if err != nil {
 		e.t.Fatalf("hash: %v", err)
 	}
-	res, err := e.db.Exec(`INSERT INTO users (name, email, password_hash, role, position, salary) VALUES (?, ?, ?, ?, '', 0)`,
-		name, email, hash, role)
+	var id int
+	err = e.db.QueryRow(`INSERT INTO users (name, email, password_hash, role, position, salary) VALUES (?, ?, ?, ?, '', 0) RETURNING id`,
+		name, email, hash, role).Scan(&id)
 	if err != nil {
 		e.t.Fatalf("insertando usuario: %v", err)
 	}
-	id, _ := res.LastInsertId()
-	return int(id)
+	return id
 }
 
 func (e *testEnv) seedCatalog() {

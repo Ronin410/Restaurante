@@ -4,13 +4,13 @@
 // descontó, etc.").
 package audit
 
-import "database/sql"
+import "github.com/ronin410/restaurante/backend/internal/dbx"
 
 type Logger struct {
-	db *sql.DB
+	db *dbx.DB
 }
 
-func New(db *sql.DB) *Logger {
+func New(db *dbx.DB) *Logger {
 	return &Logger{db: db}
 }
 

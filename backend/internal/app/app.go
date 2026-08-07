@@ -5,7 +5,6 @@
 package app
 
 import (
-	"database/sql"
 	"net/http"
 	"time"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/ronin410/restaurante/backend/internal/cashcuts"
 	"github.com/ronin410/restaurante/backend/internal/catalog"
 	"github.com/ronin410/restaurante/backend/internal/config"
+	"github.com/ronin410/restaurante/backend/internal/dbx"
 	"github.com/ronin410/restaurante/backend/internal/employees"
 	"github.com/ronin410/restaurante/backend/internal/httpx"
 	"github.com/ronin410/restaurante/backend/internal/kpis"
@@ -28,7 +28,7 @@ import (
 )
 
 // New construye el router HTTP completo con todos los módulos registrados.
-func New(db *sql.DB, cfg config.Config) http.Handler {
+func New(db *dbx.DB, cfg config.Config) http.Handler {
 	authMgr := authn.NewManager(cfg.JWTSecret, cfg.TokenTTL)
 	auditLogger := audit.New(db)
 

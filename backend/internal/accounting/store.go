@@ -2,17 +2,19 @@ package accounting
 
 import (
 	"database/sql"
+
 	"errors"
 	"fmt"
+	"github.com/ronin410/restaurante/backend/internal/dbx"
 )
 
 var ErrNotFound = errors.New("registro no encontrado")
 
 type Store struct {
-	db *sql.DB
+	db *dbx.DB
 }
 
-func NewStore(db *sql.DB) *Store {
+func NewStore(db *dbx.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -37,12 +39,12 @@ func (s *Store) ListExpenses(from, to string) ([]Expense, error) {
 }
 
 func (s *Store) CreateExpense(in ExpenseInput, createdBy int) (Expense, error) {
-	res, err := s.db.Exec(`INSERT INTO expenses (category, description, amount, supplier, date, created_by) VALUES (?, ?, ?, ?, ?, ?)`,
-		in.Category, in.Description, in.Amount, in.Supplier, in.Date, createdBy)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO expenses (category, description, amount, supplier, date, created_by) VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+		in.Category, in.Description, in.Amount, in.Supplier, in.Date, createdBy).Scan(&id)
 	if err != nil {
 		return Expense{}, err
 	}
-	id, _ := res.LastInsertId()
 	row := s.db.QueryRow(`SELECT id, category, description, amount, supplier, date, created_by, created_at FROM expenses WHERE id = ?`, id)
 	var e Expense
 	err = row.Scan(&e.ID, &e.Category, &e.Description, &e.Amount, &e.Supplier, &e.Date, &e.CreatedBy, &e.CreatedAt)
@@ -70,12 +72,12 @@ func (s *Store) ListPurchases(from, to string) ([]Purchase, error) {
 }
 
 func (s *Store) CreatePurchase(in PurchaseInput, createdBy int) (Purchase, error) {
-	res, err := s.db.Exec(`INSERT INTO purchases (supplier, description, amount, date, created_by) VALUES (?, ?, ?, ?, ?)`,
-		in.Supplier, in.Description, in.Amount, in.Date, createdBy)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO purchases (supplier, description, amount, date, created_by) VALUES (?, ?, ?, ?, ?) RETURNING id`,
+		in.Supplier, in.Description, in.Amount, in.Date, createdBy).Scan(&id)
 	if err != nil {
 		return Purchase{}, err
 	}
-	id, _ := res.LastInsertId()
 	row := s.db.QueryRow(`SELECT id, supplier, description, amount, date, created_by, created_at FROM purchases WHERE id = ?`, id)
 	var p Purchase
 	err = row.Scan(&p.ID, &p.Supplier, &p.Description, &p.Amount, &p.Date, &p.CreatedBy, &p.CreatedAt)
@@ -103,12 +105,12 @@ func (s *Store) ListInventory() ([]InventoryItem, error) {
 }
 
 func (s *Store) CreateInventoryItem(in InventoryItemInput) (InventoryItem, error) {
-	res, err := s.db.Exec(`INSERT INTO inventory_items (name, unit, min_stock) VALUES (?, ?, ?)`, in.Name, in.Unit, in.MinStock)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO inventory_items (name, unit, min_stock) VALUES (?, ?, ?) RETURNING id`, in.Name, in.Unit, in.MinStock).Scan(&id)
 	if err != nil {
 		return InventoryItem{}, err
 	}
-	id, _ := res.LastInsertId()
-	return s.GetInventoryItem(int(id))
+	return s.GetInventoryItem(id)
 }
 
 func (s *Store) GetInventoryItem(id int) (InventoryItem, error) {
@@ -157,17 +159,17 @@ func (s *Store) ListMovements(itemID int) ([]InventoryMovement, error) {
 // ---- Facturación CFDI (stub) ----
 
 func (s *Store) CreateInvoice(in InvoiceInput, createdBy int) (Invoice, error) {
-	res, err := s.db.Exec(`INSERT INTO invoices (account_id, rfc, razon_social, uso_cfdi, status, created_by) VALUES (?, ?, ?, ?, 'timbrada_simulada', ?)`,
-		in.AccountID, in.RFC, in.RazonSocial, in.UsoCFDI, createdBy)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO invoices (account_id, rfc, razon_social, uso_cfdi, status, created_by) VALUES (?, ?, ?, ?, 'timbrada_simulada', ?) RETURNING id`,
+		in.AccountID, in.RFC, in.RazonSocial, in.UsoCFDI, createdBy).Scan(&id)
 	if err != nil {
 		return Invoice{}, err
 	}
-	id, _ := res.LastInsertId()
-	uuidSim := simulatedUUID(int(id))
+	uuidSim := simulatedUUID(id)
 	if _, err := s.db.Exec(`UPDATE invoices SET uuid_fiscal = ? WHERE id = ?`, uuidSim, id); err != nil {
 		return Invoice{}, err
 	}
-	return s.GetInvoice(int(id))
+	return s.GetInvoice(id)
 }
 
 func (s *Store) GetInvoice(id int) (Invoice, error) {

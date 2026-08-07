@@ -2,7 +2,9 @@ package orders
 
 import (
 	"database/sql"
+
 	"errors"
+	"github.com/ronin410/restaurante/backend/internal/dbx"
 )
 
 var ErrNotFound = errors.New("comanda no encontrada")
@@ -10,10 +12,10 @@ var ErrItemNotFound = errors.New("partida no encontrada")
 var ErrProductNotFound = errors.New("producto no encontrado")
 
 type Store struct {
-	db *sql.DB
+	db *dbx.DB
 }
 
-func NewStore(db *sql.DB) *Store {
+func NewStore(db *dbx.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -43,15 +45,15 @@ func (s *Store) modifierInfo(id int) (modifierInfo, error) {
 }
 
 func (s *Store) CreateOrder(tableID *int, orderType string, waiterID int, customerName, customerPhone, customerAddress string) (int, error) {
-	res, err := s.db.Exec(
-		`INSERT INTO orders (table_id, type, waiter_id, customer_name, customer_phone, customer_address) VALUES (?, ?, ?, ?, ?, ?)`,
+	var id int
+	err := s.db.QueryRow(
+		`INSERT INTO orders (table_id, type, waiter_id, customer_name, customer_phone, customer_address) VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
 		tableID, orderType, waiterID, customerName, customerPhone, customerAddress,
-	)
+	).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	id, _ := res.LastInsertId()
-	return int(id), nil
+	return id, nil
 }
 
 func (s *Store) MaxTanda(orderID int) (int, error) {
@@ -78,15 +80,15 @@ func (s *Store) AddItem(orderID, tanda int, in NewItemInput) (OrderItem, error) 
 	if qty <= 0 {
 		qty = 1
 	}
-	res, err := s.db.Exec(
+	var itemID int
+	err = s.db.QueryRow(
 		`INSERT INTO order_items (order_id, product_id, product_name_snapshot, qty, unit_price, notes, tanda, status)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, 'enviado')`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, 'enviado') RETURNING id`,
 		orderID, in.ProductID, product.Name, qty, product.Price, in.Notes, tanda,
-	)
+	).Scan(&itemID)
 	if err != nil {
 		return OrderItem{}, err
 	}
-	itemID, _ := res.LastInsertId()
 
 	for _, optID := range in.ModifierOptionIDs {
 		mod, err := s.modifierInfo(optID)
@@ -100,7 +102,7 @@ func (s *Store) AddItem(orderID, tanda int, in NewItemInput) (OrderItem, error) 
 			return OrderItem{}, err
 		}
 	}
-	return s.GetItem(int(itemID))
+	return s.GetItem(itemID)
 }
 
 func (s *Store) GetItem(id int) (OrderItem, error) {

@@ -1,12 +1,16 @@
 package kpis
 
-import "database/sql"
+import (
+	"database/sql"
+
+	"github.com/ronin410/restaurante/backend/internal/dbx"
+)
 
 type Store struct {
-	db *sql.DB
+	db *dbx.DB
 }
 
-func NewStore(db *sql.DB) *Store {
+func NewStore(db *dbx.DB) *Store {
 	return &Store{db: db}
 }
 

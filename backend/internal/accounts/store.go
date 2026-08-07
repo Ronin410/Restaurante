@@ -2,17 +2,19 @@ package accounts
 
 import (
 	"database/sql"
+
 	"errors"
+	"github.com/ronin410/restaurante/backend/internal/dbx"
 )
 
 var ErrNotFound = errors.New("cuenta no encontrada")
 var ErrNoItems = errors.New("no hay productos pendientes de cobro para esta mesa")
 
 type Store struct {
-	db *sql.DB
+	db *dbx.DB
 }
 
-func NewStore(db *sql.DB) *Store {
+func NewStore(db *dbx.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -65,12 +67,12 @@ func (s *Store) itemsBelongToTable(tableID int, itemIDs []int) (bool, error) {
 }
 
 func (s *Store) createAccount(tableID int, splitMode string) (int, error) {
-	res, err := s.db.Exec(`INSERT INTO accounts (table_id, split_mode) VALUES (?, ?)`, tableID, splitMode)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO accounts (table_id, split_mode) VALUES (?, ?) RETURNING id`, tableID, splitMode).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	id, _ := res.LastInsertId()
-	return int(id), nil
+	return id, nil
 }
 
 func (s *Store) assignItems(accountID int, itemIDs []int) error {

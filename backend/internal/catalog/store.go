@@ -2,16 +2,18 @@ package catalog
 
 import (
 	"database/sql"
+
 	"errors"
+	"github.com/ronin410/restaurante/backend/internal/dbx"
 )
 
 var ErrNotFound = errors.New("elemento de catálogo no encontrado")
 
 type Store struct {
-	db *sql.DB
+	db *dbx.DB
 }
 
-func NewStore(db *sql.DB) *Store {
+func NewStore(db *dbx.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -35,12 +37,12 @@ func (s *Store) ListCategories() ([]Category, error) {
 }
 
 func (s *Store) CreateCategory(in CategoryInput) (Category, error) {
-	res, err := s.db.Exec(`INSERT INTO categories (name, sort_order) VALUES (?, ?)`, in.Name, in.SortOrder)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO categories (name, sort_order) VALUES (?, ?) RETURNING id`, in.Name, in.SortOrder).Scan(&id)
 	if err != nil {
 		return Category{}, err
 	}
-	id, _ := res.LastInsertId()
-	return Category{ID: int(id), Name: in.Name, SortOrder: in.SortOrder}, nil
+	return Category{ID: id, Name: in.Name, SortOrder: in.SortOrder}, nil
 }
 
 func (s *Store) UpdateCategory(id int, in CategoryInput) (Category, error) {
@@ -112,21 +114,21 @@ func (s *Store) CreateModifierGroup(in ModifierGroupInput) (ModifierGroup, error
 	if in.Multiple {
 		mult = 1
 	}
-	res, err := s.db.Exec(`INSERT INTO modifier_groups (name, required, multiple) VALUES (?, ?, ?)`, in.Name, req, mult)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO modifier_groups (name, required, multiple) VALUES (?, ?, ?) RETURNING id`, in.Name, req, mult).Scan(&id)
 	if err != nil {
 		return ModifierGroup{}, err
 	}
-	id, _ := res.LastInsertId()
-	return ModifierGroup{ID: int(id), Name: in.Name, Required: in.Required, Multiple: in.Multiple}, nil
+	return ModifierGroup{ID: id, Name: in.Name, Required: in.Required, Multiple: in.Multiple}, nil
 }
 
 func (s *Store) AddModifierOption(groupID int, in ModifierOptionInput) (ModifierOption, error) {
-	res, err := s.db.Exec(`INSERT INTO modifier_options (group_id, name, price_delta) VALUES (?, ?, ?)`, groupID, in.Name, in.PriceDelta)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO modifier_options (group_id, name, price_delta) VALUES (?, ?, ?) RETURNING id`, groupID, in.Name, in.PriceDelta).Scan(&id)
 	if err != nil {
 		return ModifierOption{}, err
 	}
-	id, _ := res.LastInsertId()
-	return ModifierOption{ID: int(id), GroupID: groupID, Name: in.Name, PriceDelta: in.PriceDelta}, nil
+	return ModifierOption{ID: id, GroupID: groupID, Name: in.Name, PriceDelta: in.PriceDelta}, nil
 }
 
 // ---- Productos ----
@@ -228,15 +230,16 @@ func (s *Store) CreateProduct(in ProductInput) (Product, error) {
 	if !in.Active {
 		activeInt = 0
 	}
-	res, err := s.db.Exec(`INSERT INTO products (category_id, name, price, active) VALUES (?, ?, ?, ?)`, in.CategoryID, in.Name, in.Price, activeInt)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO products (category_id, name, price, active) VALUES (?, ?, ?, ?) RETURNING id`,
+		in.CategoryID, in.Name, in.Price, activeInt).Scan(&id)
 	if err != nil {
 		return Product{}, err
 	}
-	id, _ := res.LastInsertId()
-	if err := s.setProductGroups(int(id), in.GroupIDs); err != nil {
+	if err := s.setProductGroups(id, in.GroupIDs); err != nil {
 		return Product{}, err
 	}
-	return s.GetProduct(int(id))
+	return s.GetProduct(id)
 }
 
 func (s *Store) UpdateProduct(id int, in ProductInput) (Product, error) {

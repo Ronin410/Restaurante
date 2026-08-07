@@ -14,7 +14,7 @@ import (
 func main() {
 	cfg := config.Load()
 
-	db, err := dbx.Open(cfg.DBPath)
+	db, err := dbx.Open(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("no se pudo iniciar la base de datos: %v", err)
 	}

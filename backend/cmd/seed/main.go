@@ -6,7 +6,6 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"log"
 
@@ -22,7 +21,7 @@ type seedUser struct {
 
 func main() {
 	cfg := config.Load()
-	db, err := dbx.Open(cfg.DBPath)
+	db, err := dbx.Open(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("no se pudo abrir la base de datos: %v", err)
 	}
@@ -45,19 +44,13 @@ func main() {
 		{"Cocinero Coco", "cocina@taqueria.mx", "cocina123", "cocina", "Cocinero", 7500},
 		{"Conta Contreras", "contador@taqueria.mx", "contador123", "contador", "Contador externo", 0},
 	}
-	ids := map[string]int64{}
 	for _, u := range users {
 		hash, err := authn.HashPassword(u.password)
 		if err != nil {
 			log.Fatal(err)
 		}
-		res, err := db.Exec(`INSERT INTO users (name, email, password_hash, role, position, salary) VALUES (?, ?, ?, ?, ?, ?)`,
+		mustInsert(db, `INSERT INTO users (name, email, password_hash, role, position, salary) VALUES (?, ?, ?, ?, ?, ?)`,
 			u.name, u.email, hash, u.role, u.position, u.salary)
-		if err != nil {
-			log.Fatal(err)
-		}
-		id, _ := res.LastInsertId()
-		ids[u.role] = id
 	}
 
 	zoneInterior := mustInsert(db, `INSERT INTO zones (name) VALUES ('Interior')`)
@@ -85,11 +78,11 @@ func main() {
 	mustInsert(db, `INSERT INTO modifier_options (group_id, name, price_delta) VALUES (?, 'Doble queso', 8)`, extrasMod)
 
 	tacoID := mustInsert(db, `INSERT INTO products (category_id, name, price) VALUES (?, 'Taco', 18)`, catTacos)
-	mustInsert(db, `INSERT INTO product_modifier_groups (product_id, group_id) VALUES (?, ?)`, tacoID, guisado)
-	mustInsert(db, `INSERT INTO product_modifier_groups (product_id, group_id) VALUES (?, ?)`, tacoID, extrasMod)
+	mustExec(db, `INSERT INTO product_modifier_groups (product_id, group_id) VALUES (?, ?)`, tacoID, guisado)
+	mustExec(db, `INSERT INTO product_modifier_groups (product_id, group_id) VALUES (?, ?)`, tacoID, extrasMod)
 
 	gringaID := mustInsert(db, `INSERT INTO products (category_id, name, price) VALUES (?, 'Gringa', 45)`, catOrdenes)
-	mustInsert(db, `INSERT INTO product_modifier_groups (product_id, group_id) VALUES (?, ?)`, gringaID, extrasMod)
+	mustExec(db, `INSERT INTO product_modifier_groups (product_id, group_id) VALUES (?, ?)`, gringaID, extrasMod)
 
 	mustInsert(db, `INSERT INTO products (category_id, name, price) VALUES (?, 'Orden de queso fundido', 65)`, catOrdenes)
 	mustInsert(db, `INSERT INTO products (category_id, name, price) VALUES (?, 'Refresco', 25)`, catBebidas)
@@ -108,11 +101,22 @@ func main() {
 	}
 }
 
-func mustInsert(db *sql.DB, query string, args ...interface{}) int64 {
-	res, err := db.Exec(query, args...)
-	if err != nil {
+// mustInsert ejecuta un INSERT de una sola fila en una tabla con columna
+// "id" y regresa el id generado. A diferencia de SQLite, el driver de
+// Postgres no soporta LastInsertId(); se agrega "RETURNING id" a la
+// consulta y se lee con QueryRow en su lugar.
+func mustInsert(db *dbx.DB, query string, args ...interface{}) int64 {
+	var id int64
+	if err := db.QueryRow(query+` RETURNING id`, args...).Scan(&id); err != nil {
 		log.Fatalf("seed error: %v (query: %s)", err, query)
 	}
-	id, _ := res.LastInsertId()
 	return id
+}
+
+// mustExec ejecuta una sentencia sin fila que regresar (p.ej. inserciones en
+// tablas con llave compuesta como product_modifier_groups).
+func mustExec(db *dbx.DB, query string, args ...interface{}) {
+	if _, err := db.Exec(query, args...); err != nil {
+		log.Fatalf("seed error: %v (query: %s)", err, query)
+	}
 }

@@ -2,16 +2,18 @@ package tables
 
 import (
 	"database/sql"
+
 	"errors"
+	"github.com/ronin410/restaurante/backend/internal/dbx"
 )
 
 var ErrNotFound = errors.New("mesa no encontrada")
 
 type Store struct {
-	db *sql.DB
+	db *dbx.DB
 }
 
-func NewStore(db *sql.DB) *Store {
+func NewStore(db *dbx.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -33,12 +35,12 @@ func (s *Store) ListZones() ([]Zone, error) {
 }
 
 func (s *Store) CreateZone(in ZoneInput) (Zone, error) {
-	res, err := s.db.Exec(`INSERT INTO zones (name) VALUES (?)`, in.Name)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO zones (name) VALUES (?) RETURNING id`, in.Name).Scan(&id)
 	if err != nil {
 		return Zone{}, err
 	}
-	id, _ := res.LastInsertId()
-	return Zone{ID: int(id), Name: in.Name}, nil
+	return Zone{ID: id, Name: in.Name}, nil
 }
 
 const tableCols = `t.id, t.zone_id, z.name, t.number, t.capacity, t.status, t.current_waiter_id, u.name, t.opened_at, t.joined_with`
@@ -80,12 +82,13 @@ func (s *Store) GetTable(id int) (Table, error) {
 }
 
 func (s *Store) CreateTable(in TableInput) (Table, error) {
-	res, err := s.db.Exec(`INSERT INTO tables_ (zone_id, number, capacity, status) VALUES (?, ?, ?, 'libre')`, in.ZoneID, in.Number, in.Capacity)
+	var id int
+	err := s.db.QueryRow(`INSERT INTO tables_ (zone_id, number, capacity, status) VALUES (?, ?, ?, 'libre') RETURNING id`,
+		in.ZoneID, in.Number, in.Capacity).Scan(&id)
 	if err != nil {
 		return Table{}, err
 	}
-	id, _ := res.LastInsertId()
-	return s.GetTable(int(id))
+	return s.GetTable(id)
 }
 
 func (s *Store) UpdateTable(id int, in TableInput) (Table, error) {
@@ -157,17 +160,17 @@ func (s *Store) Unjoin(tableID int) (Table, error) {
 }
 
 func (s *Store) Transfer(tableID int, fromWaiterID *int, toWaiterID, authorizedBy int) (TransferRecord, error) {
-	res, err := s.db.Exec(
-		`INSERT INTO table_transfers (table_id, from_waiter_id, to_waiter_id, authorized_by) VALUES (?, ?, ?, ?)`,
+	var id int
+	err := s.db.QueryRow(
+		`INSERT INTO table_transfers (table_id, from_waiter_id, to_waiter_id, authorized_by) VALUES (?, ?, ?, ?) RETURNING id`,
 		tableID, fromWaiterID, toWaiterID, authorizedBy,
-	)
+	).Scan(&id)
 	if err != nil {
 		return TransferRecord{}, err
 	}
 	if _, err := s.db.Exec(`UPDATE tables_ SET current_waiter_id = ? WHERE id = ?`, toWaiterID, tableID); err != nil {
 		return TransferRecord{}, err
 	}
-	id, _ := res.LastInsertId()
 	row := s.db.QueryRow(`SELECT id, table_id, from_waiter_id, to_waiter_id, authorized_by, created_at FROM table_transfers WHERE id = ?`, id)
 	var tr TransferRecord
 	err = row.Scan(&tr.ID, &tr.TableID, &tr.FromWaiterID, &tr.ToWaiterID, &tr.AuthorizedBy, &tr.CreatedAt)
