@@ -929,3 +929,31 @@ func TestCatalogManagement(t *testing.T) {
 		t.Fatalf("mesero borrar producto: esperaba 403, obtuve %d", code)
 	}
 }
+
+// TestBusinessSettings: el nombre del negocio es configurable (el sistema es
+// para cualquier restaurante); se lee sin sesión y solo el admin lo cambia.
+func TestBusinessSettings(t *testing.T) {
+	env := newTestEnv(t)
+	var s struct {
+		Name string `json:"business_name"`
+		Icon string `json:"business_icon"`
+	}
+	if code := env.do(http.MethodGet, "/api/v1/settings", "", nil, &s); code != http.StatusOK || s.Name == "" {
+		t.Fatalf("leer config sin sesión: code=%d %+v", code, s)
+	}
+	body := map[string]string{"business_name": "Mariscos El Puerto", "business_icon": "🦐"}
+	if code := env.do(http.MethodPut, "/api/v1/settings", env.tokens["gerente"], body, nil); code != http.StatusForbidden {
+		t.Fatalf("gerente no debe cambiar la config: %d", code)
+	}
+	if code := env.do(http.MethodPut, "/api/v1/settings", env.tokens["admin"], body, nil); code != http.StatusOK {
+		t.Fatalf("admin cambia config: %d", code)
+	}
+	env.do(http.MethodGet, "/api/v1/settings", "", nil, &s)
+	if s.Name != "Mariscos El Puerto" || s.Icon != "🦐" {
+		t.Fatalf("config no se guardó: %+v", s)
+	}
+	if code := env.do(http.MethodPut, "/api/v1/settings", env.tokens["admin"], map[string]string{"business_name": "  "}, nil); code != http.StatusBadRequest {
+		t.Fatalf("nombre vacío: esperaba 400, obtuve %d", code)
+	}
+	env.do(http.MethodPut, "/api/v1/settings", env.tokens["admin"], map[string]string{"business_name": "Mi Restaurante", "business_icon": "🍽️"}, nil)
+}

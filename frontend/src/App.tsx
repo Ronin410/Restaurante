@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { RequireRole } from './auth/RequireRole'
 import { LoginPage } from './pages/LoginPage'
 import { TimeclockPage } from './pages/TimeclockPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { OrdersPage } from './pages/OrdersPage'
 import { TablesPage } from './pages/TablesPage'
 import { TableDetailPage } from './pages/TableDetailPage'
@@ -42,6 +43,14 @@ export function App() {
           element={
             <RequireRole roles={['admin', 'gerente', 'cajero', 'mesero']}>
               <OrdersPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/configuracion"
+          element={
+            <RequireRole roles={['admin']}>
+              <SettingsPage />
             </RequireRole>
           }
         />

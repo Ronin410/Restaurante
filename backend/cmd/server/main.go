@@ -1,5 +1,5 @@
 // Command server arranca la API REST del sistema de administración para
-// taquería (POS + back office).
+// restaurante (POS + back office).
 package main
 
 import (

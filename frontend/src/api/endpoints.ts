@@ -4,6 +4,7 @@
 
 import { apiFetch, apiMutateOrQueue, type QueueableResult } from './client'
 import type {
+  BusinessSettings,
   Attendance,
   Account,
   AuditEntry,
@@ -39,6 +40,11 @@ export const AuthApi = {
   login: (email: string, password: string) =>
     apiFetch<LoginResult>('/auth/login', { method: 'POST', body: { email, password } }),
   me: () => apiFetch<User>('/auth/me'),
+}
+
+export const SettingsApi = {
+  get: () => apiFetch<BusinessSettings>('/settings'),
+  update: (input: BusinessSettings) => apiFetch<BusinessSettings>('/settings', { method: 'PUT', body: input }),
 }
 
 export const EmployeesApi = {

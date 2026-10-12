@@ -1,6 +1,6 @@
-# Sistema de Administración para Taquería
+# Sistema de Administración para Restaurantes
 
-POS + back office para gestionar la operación diaria de una taquería:
+POS + back office para gestionar la operación diaria de cualquier restaurante (taquería, cafetería, mariscos, pizzería…):
 comandas, mesas, cobro, cortes de caja, personal y contaduría, con acceso
 por roles y reportes en tiempo real. Implementado a partir de
 [`docs/especificaciones_software_taqueria.md`](docs/especificaciones_software_taqueria.md).
@@ -88,6 +88,16 @@ el backend hace cumplir los permisos en cada endpoint (no solo en la UI).
 >
 > **Flujo de mesa simplificado:** no existe estado de "limpieza". Al cerrar la última cuenta de
 > una mesa, esta queda *libre* automáticamente.
+
+### Para cualquier tipo de restaurante
+
+El sistema no está atado a un giro: el **nombre y el ícono del negocio** se cambian desde
+**Configuración** (administrador) y se reflejan en el menú, el inicio de sesión y la pestaña del navegador.
+Catálogo, categorías, modificadores, zonas y mesas son 100% editables.
+
+> El comando de datos de ejemplo (`seed`) carga un menú de muestra (tacos, bebidas…) y usuarios de prueba
+> `@taqueria.mx` solo para probar. Los nombres internos (contenedores `taqueria-*`, base de datos `taqueria`)
+> se conservan para no romper instalaciones existentes; no se ven en la app.
 
 ### Zonas y mesas personalizables
 

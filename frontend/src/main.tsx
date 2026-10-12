@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import { App } from './App'
 import { AuthProvider } from './auth/AuthContext'
+import { SettingsProvider } from './settings/SettingsContext'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,9 +29,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        <SettingsProvider>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </SettingsProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,

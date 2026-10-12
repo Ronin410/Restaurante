@@ -22,7 +22,7 @@ export function CatalogPage() {
           Productos
         </button>
         <button className={tab === 'modificadores' ? 'active' : ''} onClick={() => setTab('modificadores')}>
-          Modificadores (guisados, extras…)
+          Modificadores (opciones y extras)
         </button>
       </div>
       {tab === 'productos' ? <ProductsTab /> : <ModifiersTab />}
@@ -361,7 +361,7 @@ function ModifiersTab() {
         <button className="btn primary" onClick={() => setGroupForm({ group: null })}>
           + Nuevo grupo
         </button>
-        <span className="muted">Ej.: “Guisado” (pastor, suadero…), “Extras” (queso +$10), “Término”.</span>
+        <span className="muted">Ej.: “Término de cocción”, “Guarnición”, “Extras” (queso +$10), “Tamaño”.</span>
       </div>
       {err && <div className="error-banner">{err.message}</div>}
 

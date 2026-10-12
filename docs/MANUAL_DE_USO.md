@@ -1,6 +1,6 @@
 # Manual de uso
 
-Sistema de administración para taquería. Se usa desde **tablet** (principal), celular o
+Sistema de administración para restaurantes de cualquier giro. Se usa desde **tablet** (principal), celular o
 computadora, con el navegador. Cada persona entra con su propio usuario y contraseña, y
 solo ve las secciones de su rol.
 
@@ -13,7 +13,7 @@ solo ve las secciones de su rol.
 
 | Rol | Ve en el menú |
 |---|---|
-| admin | Todo |
+| admin | Todo (incluye Configuración) |
 | gerente | Mesas, Cocina, Cortes, Panel, Personal, Catálogo, Auditoría |
 | cajero | Mesas, Pedidos / llevar, Cortes de caja |
 | mesero | Mesas, Pedidos / llevar |
@@ -149,6 +149,12 @@ Todo alta/edición/baja queda en **Auditoría**. Si no hay fecha en un gasto/com
 
 Bitácora de acciones sensibles: quién, qué y cuándo (descuentos, cancelaciones, altas/bajas de
 contaduría, etc.).
+
+## 11.1 Configuración (admin)
+
+Menú **Configuración**: cambia el **nombre** y el **ícono** (emoji) de tu negocio. Se muestran en el menú lateral,
+en el inicio de sesión y en la pestaña del navegador. Es lo primero que conviene hacer al instalar el sistema,
+junto con crear tus zonas/mesas y tu catálogo (los datos de ejemplo se pueden editar o borrar).
 
 ## 12. Preguntas frecuentes
 

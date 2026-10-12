@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { OfflineBanner } from './OfflineBanner'
+import { useBusiness } from '../settings/SettingsContext'
 import type { Role } from '../api/types'
 
 interface NavItem {
@@ -22,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/personal', label: 'Personal', icon: '👥', group: 'Administración', roles: ['admin', 'gerente'] },
   { to: '/contaduria', label: 'Contaduría', icon: '🧾', group: 'Administración', roles: ['admin', 'contador'] },
   { to: '/auditoria', label: 'Auditoría', icon: '🔍', group: 'Administración', roles: ['admin', 'gerente'] },
+  { to: '/configuracion', label: 'Configuración', icon: '⚙️', group: 'Administración', roles: ['admin'] },
 ]
 
 const CLOCK_ITEM = { to: '/checador', label: 'Mi checador', icon: '⏱️' }
@@ -36,6 +38,7 @@ const CLOCK_ITEM = { to: '/checador', label: 'Mi checador', icon: '⏱️' }
  */
 export function Layout() {
   const { user, logout } = useAuth()
+  const business = useBusiness()
   const [menuOpen, setMenuOpen] = useState(false)
   const location = useLocation()
 
@@ -48,7 +51,7 @@ export function Layout() {
 
   const visibleItems = NAV_ITEMS.filter((item) => !item.roles || (user && item.roles.includes(user.role)))
   const currentTitle =
-    [...visibleItems, CLOCK_ITEM].find((item) => location.pathname.startsWith(item.to))?.label ?? 'Taquería'
+    [...visibleItems, CLOCK_ITEM].find((item) => location.pathname.startsWith(item.to))?.label ?? business.business_name
 
   return (
     <div className="app-shell">
@@ -67,7 +70,9 @@ export function Layout() {
       <div className={`sidebar-backdrop ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(false)} />
 
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
-        <h1>🌮 Taquería</h1>
+        <h1>
+          {business.business_icon} {business.business_name}
+        </h1>
         <nav>
           {(['Operación', 'Administración'] as const).map((group) => {
             const items = visibleItems.filter((i) => i.group === group)

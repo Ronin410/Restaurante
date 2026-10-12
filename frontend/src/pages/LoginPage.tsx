@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useBusiness } from '../settings/SettingsContext'
 
 export function LoginPage() {
   const { user, login, error } = useAuth()
+  const business = useBusiness()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -25,7 +27,9 @@ export function LoginPage() {
   return (
     <div className="login-page">
       <form className="card login-card" onSubmit={handleSubmit}>
-        <h1>🌮 Taquería</h1>
+        <h1>
+          {business.business_icon} {business.business_name}
+        </h1>
         <p className="muted" style={{ marginTop: '-0.5rem' }}>
           Inicia sesión con tu usuario
         </p>
@@ -39,7 +43,7 @@ export function LoginPage() {
             autoFocus
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="mesero@taqueria.mx"
+            placeholder="tu@correo.com"
           />
         </div>
         <div className="field">

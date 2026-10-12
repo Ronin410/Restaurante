@@ -386,3 +386,8 @@ export interface AuditEntry {
 export interface ApiError {
   error: string
 }
+
+export interface BusinessSettings {
+  business_name: string
+  business_icon: string
+}

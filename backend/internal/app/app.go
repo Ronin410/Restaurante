@@ -24,6 +24,7 @@ import (
 	"github.com/ronin410/restaurante/backend/internal/httpx"
 	"github.com/ronin410/restaurante/backend/internal/kpis"
 	"github.com/ronin410/restaurante/backend/internal/orders"
+	"github.com/ronin410/restaurante/backend/internal/settings"
 	"github.com/ronin410/restaurante/backend/internal/tables"
 )
 
@@ -44,6 +45,7 @@ func New(db *dbx.DB, cfg config.Config) http.Handler {
 	accountingHandler := accounting.NewHandler(accounting.NewService(accounting.NewStore(db)), auditLogger)
 	kpisHandler := kpis.NewHandler(kpis.NewService(kpis.NewStore(db)))
 	auditHandler := audit.NewHandler(auditLogger)
+	settingsHandler := settings.NewHandler(db, auditLogger)
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -65,6 +67,7 @@ func New(db *dbx.DB, cfg config.Config) http.Handler {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		empHandler.RegisterPublicRoutes(r)
+		settingsHandler.RegisterPublicRoutes(r)
 
 		r.Group(func(r chi.Router) {
 			r.Use(authMgr.Middleware)
@@ -77,6 +80,7 @@ func New(db *dbx.DB, cfg config.Config) http.Handler {
 			accountingHandler.RegisterRoutes(r)
 			kpisHandler.RegisterRoutes(r)
 			auditHandler.RegisterRoutes(r)
+			settingsHandler.RegisterRoutes(r)
 		})
 	})
 

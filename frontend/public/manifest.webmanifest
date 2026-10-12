@@ -1,7 +1,7 @@
 {
-  "name": "Taquería POS",
-  "short_name": "Taquería",
-  "description": "Sistema de administración para taquería: comandas, mesas, cobro, cortes de caja, personal y contaduría.",
+  "name": "Restaurante POS",
+  "short_name": "Restaurante",
+  "description": "Sistema de administración para restaurantes: comandas, mesas, cobro, cortes de caja, personal y contaduría.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f4f5f7",

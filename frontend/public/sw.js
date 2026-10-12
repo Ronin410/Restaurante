@@ -5,7 +5,7 @@
 // JavaScript (ver src/utils/offlineQueue.ts) y necesita ver los fallos de
 // red reales para decidir cuándo encolar, no una respuesta cacheada.
 
-const CACHE_NAME = 'taqueria-shell-v1'
+const CACHE_NAME = 'taqueria-shell-v2'
 const SHELL_URLS = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg']
 
 self.addEventListener('install', (event) => {
