@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AccountsApi } from '../api/endpoints'
@@ -25,8 +25,13 @@ export function NewAccountPage() {
     onSuccess: (account) => navigate(`/cuentas/${account.id}`, { replace: true }),
   })
 
+  const started = useRef(false)
   useEffect(() => {
-    if (tableId) generateMutation.mutate()
+    // Evita generar dos veces (StrictMode / doble render) la misma cuenta.
+    if (tableId && !started.current) {
+      started.current = true
+      generateMutation.mutate()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tableId])
 

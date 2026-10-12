@@ -7,19 +7,24 @@ import type { Role } from '../api/types'
 interface NavItem {
   to: string
   label: string
+  icon: string
+  group: 'Operación' | 'Administración'
   roles?: Role[]
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/mesas', label: 'Mesas', roles: ['admin', 'gerente', 'cajero', 'mesero'] },
-  { to: '/kds', label: 'Cocina (KDS)', roles: ['admin', 'gerente', 'cocina'] },
-  { to: '/cortes', label: 'Cortes de caja', roles: ['admin', 'gerente', 'cajero', 'contador'] },
-  { to: '/dashboard', label: 'Panel / KPIs', roles: ['admin', 'gerente', 'contador'] },
-  { to: '/personal', label: 'Personal', roles: ['admin', 'gerente'] },
-  { to: '/catalogo', label: 'Catálogo', roles: ['admin', 'gerente'] },
-  { to: '/contaduria', label: 'Contaduría', roles: ['admin', 'contador'] },
-  { to: '/auditoria', label: 'Auditoría', roles: ['admin', 'gerente'] },
+  { to: '/mesas', label: 'Mesas', icon: '🍽️', group: 'Operación', roles: ['admin', 'gerente', 'cajero', 'mesero'] },
+  { to: '/pedidos', label: 'Pedidos / llevar', icon: '🛍️', group: 'Operación', roles: ['admin', 'gerente', 'cajero', 'mesero'] },
+  { to: '/kds', label: 'Cocina', icon: '👨‍🍳', group: 'Operación', roles: ['admin', 'gerente', 'cocina'] },
+  { to: '/cortes', label: 'Cortes de caja', icon: '💵', group: 'Operación', roles: ['admin', 'gerente', 'cajero', 'contador'] },
+  { to: '/dashboard', label: 'Panel / KPIs', icon: '📊', group: 'Administración', roles: ['admin', 'gerente', 'contador'] },
+  { to: '/catalogo', label: 'Catálogo', icon: '📖', group: 'Administración', roles: ['admin', 'gerente'] },
+  { to: '/personal', label: 'Personal', icon: '👥', group: 'Administración', roles: ['admin', 'gerente'] },
+  { to: '/contaduria', label: 'Contaduría', icon: '🧾', group: 'Administración', roles: ['admin', 'contador'] },
+  { to: '/auditoria', label: 'Auditoría', icon: '🔍', group: 'Administración', roles: ['admin', 'gerente'] },
 ]
+
+const CLOCK_ITEM = { to: '/checador', label: 'Mi checador', icon: '⏱️' }
 
 /**
  * El uso principal de esta app es en tablet, en el piso de venta: la barra
@@ -42,7 +47,8 @@ export function Layout() {
   }, [location.pathname])
 
   const visibleItems = NAV_ITEMS.filter((item) => !item.roles || (user && item.roles.includes(user.role)))
-  const currentTitle = visibleItems.find((item) => location.pathname.startsWith(item.to))?.label ?? 'Taquería'
+  const currentTitle =
+    [...visibleItems, CLOCK_ITEM].find((item) => location.pathname.startsWith(item.to))?.label ?? 'Taquería'
 
   return (
     <div className="app-shell">
@@ -63,11 +69,31 @@ export function Layout() {
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
         <h1>🌮 Taquería</h1>
         <nav>
-          {visibleItems.map((item) => (
-            <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}>
-              {item.label}
+          {(['Operación', 'Administración'] as const).map((group) => {
+            const items = visibleItems.filter((i) => i.group === group)
+            if (items.length === 0) return null
+            return (
+              <div key={group} className="nav-group">
+                <div className="nav-group-title">{group}</div>
+                {items.map((item) => (
+                  <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}>
+                    <span className="nav-icon" aria-hidden>
+                      {item.icon}
+                    </span>
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
+            )
+          })}
+          <div className="nav-group">
+            <NavLink to={CLOCK_ITEM.to} className={({ isActive }) => (isActive ? 'active' : '')}>
+              <span className="nav-icon" aria-hidden>
+                {CLOCK_ITEM.icon}
+              </span>
+              {CLOCK_ITEM.label}
             </NavLink>
-          ))}
+          </div>
         </nav>
         <div className="user-box">
           <div>

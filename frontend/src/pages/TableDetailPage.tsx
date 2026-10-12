@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { CatalogApi, OrdersApi, TablesApi } from '../api/endpoints'
+import { AccountsApi, CatalogApi, OrdersApi, TablesApi } from '../api/endpoints'
 import type { NewItemInput } from '../api/endpoints'
 import type { Product } from '../api/types'
 import { formatCurrency } from '../utils/money'
@@ -35,6 +35,13 @@ export function TableDetailPage() {
     queryFn: () => OrdersApi.listOpen(tableId),
     refetchInterval: 8000,
   })
+
+  const { data: tableAccounts } = useQuery({
+    queryKey: ['accounts', 'table', tableId],
+    queryFn: () => AccountsApi.byTable(tableId),
+    refetchInterval: 8000,
+  })
+  const openAccounts = (tableAccounts ?? []).filter((a) => a.status === 'abierta')
 
   const order = openOrders?.[0]
 
@@ -102,11 +109,8 @@ export function TableDetailPage() {
           Mesa {table.number} · <span className="status-badge">{table.status}</span>
         </h2>
         <div style={{ flex: 1 }} />
-        <button className="btn" onClick={() => statusMutation.mutate('cuenta_solicitada')}>
-          Cuenta solicitada
-        </button>
         <button className="btn primary" onClick={() => navigate(`/cuentas/nueva?table=${tableId}`)}>
-          Generar cuenta
+          {openAccounts.length > 0 ? 'Cobrar cuenta' : 'Generar cuenta'}
         </button>
         {!order && table.status !== 'libre' && (
           <button
@@ -118,6 +122,20 @@ export function TableDetailPage() {
           </button>
         )}
       </div>
+
+      {openAccounts.map((a) => (
+        <div className="callout" key={a.id}>
+          <div>
+            <strong>Cuenta #{a.id} generada, falta cobrar</strong>
+            <div className="muted">
+              Saldo pendiente {formatCurrency(a.balance)}. La mesa se libera sola cuando la cuenta se cobra y se cierra.
+            </div>
+          </div>
+          <button className="btn primary" onClick={() => navigate(`/cuentas/${a.id}`)}>
+            Cobrar / ver cuenta
+          </button>
+        </div>
+      ))}
 
       <div className="grid" style={{ gridTemplateColumns: '2fr 1fr', alignItems: 'start' }}>
         <div>

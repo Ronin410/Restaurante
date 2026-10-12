@@ -10,6 +10,7 @@ import (
 )
 
 var ErrNotFound = errors.New("empleado no encontrado")
+var ErrHasHistory = errors.New("el empleado ya tiene historial (comandas, pagos, cortes…) y no se puede eliminar; dalo de baja")
 var ErrEmailTaken = errors.New("el correo ya está registrado")
 
 type Store struct {
@@ -125,12 +126,41 @@ func (s *Store) Update(id int, in UpdateUserInput) (User, error) {
 	if in.Active {
 		activeInt = 1
 	}
+	if _, err := s.GetByID(id); err != nil {
+		return User{}, err
+	}
 	_, err := s.db.Exec(
 		`UPDATE users SET name = ?, role = ?, position = ?, salary = ?, active = ?, updated_at = datetime('now') WHERE id = ?`,
 		in.Name, string(in.Role), in.Position, in.Salary, activeInt, id,
 	)
 	if err != nil {
 		return User{}, err
+	}
+	if in.Email != "" {
+		var other int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM users WHERE email = ? AND id != ?`, in.Email, id).Scan(&other); err != nil {
+			return User{}, err
+		}
+		if other > 0 {
+			return User{}, ErrEmailTaken
+		}
+		if _, err := s.db.Exec(`UPDATE users SET email = ? WHERE id = ?`, in.Email, id); err != nil {
+			return User{}, err
+		}
+	}
+	if in.HireDate != "" {
+		if _, err := s.db.Exec(`UPDATE users SET hire_date = ? WHERE id = ?`, in.HireDate, id); err != nil {
+			return User{}, err
+		}
+	}
+	if in.Password != "" {
+		hash, err := authn.HashPassword(in.Password)
+		if err != nil {
+			return User{}, err
+		}
+		if _, err := s.db.Exec(`UPDATE users SET password_hash = ? WHERE id = ?`, hash, id); err != nil {
+			return User{}, err
+		}
 	}
 	row, err := s.GetByID(id)
 	if err != nil {
@@ -232,4 +262,29 @@ func (s *Store) ListIncidents(userID int) ([]Incident, error) {
 		out = append(out, i)
 	}
 	return out, rows.Err()
+}
+
+// Delete elimina al empleado por completo (junto con su checador e
+// incidencias) en una transacción. Si ya tiene historial operativo (comandas,
+// pagos, cortes, auditoría…) la base lo impide: se devuelve ErrHasHistory y
+// no se pierde nada; en ese caso lo correcto es darlo de baja.
+func (s *Store) Delete(id int) error {
+	if _, err := s.GetByID(id); err != nil {
+		return err
+	}
+	tx, err := s.db.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM attendance WHERE user_id = $1`,
+		`DELETE FROM incidents WHERE user_id = $1`,
+		`DELETE FROM users WHERE id = $1`,
+	} {
+		if _, err := tx.Exec(q, id); err != nil {
+			return ErrHasHistory
+		}
+	}
+	return tx.Commit()
 }

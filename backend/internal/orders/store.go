@@ -220,12 +220,15 @@ func (s *Store) listOrderItems(orderID int) ([]OrderItem, error) {
 	return out, nil
 }
 
-func (s *Store) ListOpenOrders(tableID *int) ([]Order, error) {
+func (s *Store) ListOpenOrders(tableID *int, noTable bool) ([]Order, error) {
 	query := `SELECT o.id FROM orders o WHERE o.status = 'abierta'`
 	args := []interface{}{}
 	if tableID != nil {
 		query += ` AND o.table_id = ?`
 		args = append(args, *tableID)
+	}
+	if noTable {
+		query += ` AND o.table_id IS NULL`
 	}
 	query += ` ORDER BY o.opened_at`
 	rows, err := s.db.Query(query, args...)

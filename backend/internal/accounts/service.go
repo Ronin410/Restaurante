@@ -3,6 +3,7 @@ package accounts
 import (
 	"errors"
 	"fmt"
+	"sync"
 )
 
 var ErrValidation = errors.New("datos inválidos")
@@ -27,9 +28,14 @@ type ShiftFinder interface {
 // de inmediato y el personal la prepara por su cuenta.
 type TableReleaser interface {
 	Release(tableID int) error
+	// RequestBill marca la mesa como "cuenta solicitada" al generar la cuenta.
+	RequestBill(tableID int) error
 }
 
 type Service struct {
+	// genMu serializa la generación de cuentas: sin esto, dos peticiones casi
+	// simultáneas (doble toque) podrían crear dos cuentas con las mismas partidas.
+	genMu    sync.Mutex
 	store    *Store
 	shifts   ShiftFinder
 	releaser TableReleaser
@@ -39,11 +45,44 @@ func NewService(store *Store, shifts ShiftFinder, releaser TableReleaser) *Servi
 	return &Service{store: store, shifts: shifts, releaser: releaser}
 }
 
+// GenerateOrderAccount genera la cuenta de un pedido sin mesa (llevar/domicilio).
+func (s *Service) GenerateOrderAccount(orderID int) (Account, error) {
+	s.genMu.Lock()
+	defer s.genMu.Unlock()
+	acc, err := s.store.GenerateAccountForOrder(orderID)
+	if errors.Is(err, ErrNoItems) {
+		if open, oerr := s.store.OpenAccountForOrder(orderID); oerr == nil && open != 0 {
+			return s.store.GetAccount(open)
+		}
+	}
+	return acc, err
+}
+
 func (s *Service) GenerateAccount(tableID int) (Account, error) {
 	if tableID == 0 {
-		return Account{}, fmt.Errorf("%w: mesa obligatoria", ErrValidation)
+		return Account{}, fmt.Errorf("%w: mesa o pedido obligatorio", ErrValidation)
 	}
-	return s.store.GenerateAccount(tableID)
+	s.genMu.Lock()
+	defer s.genMu.Unlock()
+	acc, err := s.store.GenerateAccount(tableID)
+	if errors.Is(err, ErrNoItems) {
+		// Si ya hay una cuenta abierta (ya se generó/imprimió pero falta
+		// cobrarla), se regresa esa en lugar de un error: así se puede
+		// retomar el cobro y cerrarla, que es lo que libera la mesa.
+		if open, oerr := s.store.OpenAccountForTable(tableID); oerr == nil && open != 0 {
+			return s.store.GetAccount(open)
+		}
+		return Account{}, err
+	}
+	if err != nil {
+		return Account{}, err
+	}
+	if s.releaser != nil {
+		if rerr := s.releaser.RequestBill(tableID); rerr != nil {
+			return Account{}, rerr
+		}
+	}
+	return acc, nil
 }
 
 func (s *Service) SplitByProduct(in SplitByProductInput) ([]Account, error) {

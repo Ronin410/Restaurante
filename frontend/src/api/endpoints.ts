@@ -4,6 +4,7 @@
 
 import { apiFetch, apiMutateOrQueue, type QueueableResult } from './client'
 import type {
+  Attendance,
   Account,
   AuditEntry,
   CashCut,
@@ -51,11 +52,23 @@ export const EmployeesApi = {
     salary: number
     hire_date?: string
   }) => apiFetch<User>('/employees/', { method: 'POST', body: input }),
-  update: (id: number, input: { name: string; role: string; position: string; salary: number; active: boolean }) =>
-    apiFetch<User>(`/employees/${id}`, { method: 'PUT', body: input }),
+  update: (
+    id: number,
+    input: {
+      name: string
+      role: string
+      position: string
+      salary: number
+      active: boolean
+      email?: string
+      password?: string
+      hire_date?: string
+    },
+  ) => apiFetch<User>(`/employees/${id}`, { method: 'PUT', body: input }),
+  remove: (id: number) => apiFetch<void>(`/employees/${id}`, { method: 'DELETE' }),
   clockIn: (id: number) => apiFetch(`/employees/${id}/attendance/clock-in`, { method: 'POST' }),
   clockOut: (id: number) => apiFetch(`/employees/${id}/attendance/clock-out`, { method: 'POST' }),
-  attendance: (id: number) => apiFetch(`/employees/${id}/attendance`),
+  attendance: (id: number) => apiFetch<Attendance[]>(`/employees/${id}/attendance`),
   incidents: (id: number) => apiFetch<Incident[]>(`/employees/${id}/incidents`),
   createIncident: (id: number, input: { type: string; date: string; note: string }) =>
     apiFetch<Incident>(`/employees/${id}/incidents`, { method: 'POST', body: input }),
@@ -74,6 +87,17 @@ export const CatalogApi = {
     id: number,
     input: { category_id: number; name: string; price: number; active: boolean; group_ids: number[] },
   ) => apiFetch<Product>(`/products/${id}`, { method: 'PUT', body: input }),
+  deleteProduct: (id: number) => apiFetch<void>(`/products/${id}`, { method: 'DELETE' }),
+  updateCategory: (id: number, input: { name: string; sort_order: number }) =>
+    apiFetch<Category>(`/categories/${id}`, { method: 'PUT', body: input }),
+  deleteCategory: (id: number) => apiFetch<void>(`/categories/${id}`, { method: 'DELETE' }),
+  updateModifierGroup: (id: number, input: { name: string; required: boolean; multiple: boolean }) =>
+    apiFetch<ModifierGroup>(`/modifier-groups/${id}`, { method: 'PUT', body: input }),
+  deleteModifierGroup: (id: number) => apiFetch<void>(`/modifier-groups/${id}`, { method: 'DELETE' }),
+  updateModifierOption: (groupId: number, optionId: number, input: { name: string; price_delta: number }) =>
+    apiFetch(`/modifier-groups/${groupId}/options/${optionId}`, { method: 'PUT', body: input }),
+  deleteModifierOption: (groupId: number, optionId: number) =>
+    apiFetch<void>(`/modifier-groups/${groupId}/options/${optionId}`, { method: 'DELETE' }),
   modifierGroups: () => apiFetch<ModifierGroup[]>('/modifier-groups/'),
   createModifierGroup: (input: { name: string; required: boolean; multiple: boolean }) =>
     apiFetch<ModifierGroup>('/modifier-groups/', { method: 'POST', body: input }),
@@ -120,6 +144,8 @@ export interface NewItemInput {
 
 export const OrdersApi = {
   listOpen: (tableId?: number) => apiFetch<Order[]>(`/orders/${tableId ? `?table_id=${tableId}` : ''}`),
+  /** Pedidos para llevar / a domicilio que siguen sin cobrar (no tienen mesa). */
+  listPending: () => apiFetch<Order[]>('/orders/?no_table=1'),
   get: (id: number) => apiFetch<Order>(`/orders/${id}`),
   create: (input: {
     table_id?: number | null
@@ -143,6 +169,8 @@ export const OrdersApi = {
 
 export const AccountsApi = {
   generate: (tableId: number) => apiFetch<Account>('/accounts/generate', { method: 'POST', body: { table_id: tableId } }),
+  generateForOrder: (orderId: number) =>
+    apiFetch<Account>('/accounts/generate', { method: 'POST', body: { order_id: orderId } }),
   splitByProduct: (tableId: number, groups: number[][]) =>
     apiFetch<Account[]>('/accounts/split-by-product', { method: 'POST', body: { table_id: tableId, groups } }),
   get: (id: number) => apiFetch<Account>(`/accounts/${id}`),

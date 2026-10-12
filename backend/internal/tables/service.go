@@ -112,6 +112,12 @@ func (s *Service) Release(id int) error {
 	return err
 }
 
+// RequestBill pone la mesa en "cuenta_solicitada" (la usa Generar cuenta).
+func (s *Service) RequestBill(id int) error {
+	_, err := s.store.SetStatus(id, "cuenta_solicitada")
+	return err
+}
+
 func (s *Service) AssignWaiter(id, waiterID int) (Table, error) {
 	return s.store.AssignWaiter(id, waiterID)
 }

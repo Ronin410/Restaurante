@@ -35,9 +35,11 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/employees", func(r chi.Router) {
 		r.With(staff).Get("/", h.list)
 		r.With(staff).Post("/", h.create)
-		r.Get("/{id}", h.get) // cualquier usuario autenticado puede ver su propio perfil vía /auth/me; detalle completo restringido en el front
+		r.Get("/{id}", h.get) // personal de gerencia, o el propio empleado
 		r.With(staff).Put("/{id}", h.update)
+		r.With(staff).Delete("/{id}", h.delete)
 
+		// Checador: cada quien marca lo suyo; gerencia puede marcar/consultar a cualquiera.
 		r.Post("/{id}/attendance/clock-in", h.clockIn)
 		r.Post("/{id}/attendance/clock-out", h.clockOut)
 		r.Get("/{id}/attendance", h.listAttendance)
@@ -100,10 +102,43 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, user)
 }
 
+// selfOrStaff valida que el usuario autenticado sea el empleado {id} o
+// personal de gerencia (admin/gerente). Responde 403 si no.
+func selfOrStaff(w http.ResponseWriter, r *http.Request, id int) bool {
+	claims, ok := authn.FromContext(r.Context())
+	if ok && (claims.UserID == id || claims.Role == authn.RoleAdmin || claims.Role == authn.RoleGerente) {
+		return true
+	}
+	httpx.Error(w, http.StatusForbidden, "no tienes permiso para esta acción")
+	return false
+}
+
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	if err := h.svc.DeleteEmployee(claims.UserID, id); err != nil {
+		if errors.Is(err, ErrHasHistory) {
+			httpx.Error(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeServiceErr(w, err)
+		return
+	}
+	h.audit.Log(claims.UserID, "delete", "employee", id, "")
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	id, err := idParam(r)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if !selfOrStaff(w, r, id) {
 		return
 	}
 	user, err := h.svc.GetEmployee(id)
@@ -125,12 +160,12 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "cuerpo inválido")
 		return
 	}
-	user, err := h.svc.UpdateEmployee(id, in)
+	claims, _ := authn.FromContext(r.Context())
+	user, err := h.svc.UpdateEmployee(claims.UserID, id, in)
 	if err != nil {
 		writeServiceErr(w, err)
 		return
 	}
-	claims, _ := authn.FromContext(r.Context())
 	h.audit.Log(claims.UserID, "update", "employee", id, "")
 	httpx.JSON(w, http.StatusOK, user)
 }
@@ -139,6 +174,9 @@ func (h *Handler) clockIn(w http.ResponseWriter, r *http.Request) {
 	id, err := idParam(r)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if !selfOrStaff(w, r, id) {
 		return
 	}
 	att, err := h.svc.ClockIn(id)
@@ -155,6 +193,9 @@ func (h *Handler) clockOut(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "id inválido")
 		return
 	}
+	if !selfOrStaff(w, r, id) {
+		return
+	}
 	att, err := h.svc.ClockOut(id)
 	if err != nil {
 		writeServiceErr(w, err)
@@ -167,6 +208,9 @@ func (h *Handler) listAttendance(w http.ResponseWriter, r *http.Request) {
 	id, err := idParam(r)
 	if err != nil {
 		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if !selfOrStaff(w, r, id) {
 		return
 	}
 	list, err := h.svc.ListAttendance(id, r.URL.Query().Get("from"), r.URL.Query().Get("to"))

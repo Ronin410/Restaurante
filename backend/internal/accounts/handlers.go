@@ -42,7 +42,13 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, http.StatusBadRequest, "cuerpo inválido")
 		return
 	}
-	acc, err := h.svc.GenerateAccount(in.TableID)
+	var acc Account
+	var err error
+	if in.OrderID != 0 && in.TableID == 0 {
+		acc, err = h.svc.GenerateOrderAccount(in.OrderID)
+	} else {
+		acc, err = h.svc.GenerateAccount(in.TableID)
+	}
 	if err != nil {
 		writeErr(w, err)
 		return

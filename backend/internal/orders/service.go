@@ -82,8 +82,8 @@ func (s *Service) GetOrder(id int) (Order, error) {
 	return s.store.GetOrder(id)
 }
 
-func (s *Service) ListOpenOrders(tableID *int) ([]Order, error) {
-	return s.store.ListOpenOrders(tableID)
+func (s *Service) ListOpenOrders(tableID *int, noTable bool) ([]Order, error) {
+	return s.store.ListOpenOrders(tableID, noTable)
 }
 
 func (s *Service) ListKitchenItems() ([]OrderItem, error) {

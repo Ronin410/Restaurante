@@ -15,8 +15,8 @@ solo ve las secciones de su rol.
 |---|---|
 | admin | Todo |
 | gerente | Mesas, Cocina, Cortes, Panel, Personal, Catálogo, Auditoría |
-| cajero | Mesas, Cortes de caja |
-| mesero | Mesas |
+| cajero | Mesas, Pedidos / llevar, Cortes de caja |
+| mesero | Mesas, Pedidos / llevar |
 | cocina | Cocina (KDS) |
 | contador | Cortes (consulta), Panel/KPIs, Contaduría |
 
@@ -41,12 +41,22 @@ solo ve las secciones de su rol.
 
 **Botones de la mesa**
 
-* **Cuenta solicitada**: marca la mesa para que se vea en el mapa.
-* **Generar cuenta**: junta todo lo consumido en una cuenta (ver sección 4).
+* **Generar cuenta**: junta todo lo consumido en una cuenta (ver sección 4) y marca la mesa como
+  *cuenta solicitada*. Si la cuenta ya se generó y falta cobrarla, el botón cambia a **Cobrar cuenta**
+  y arriba aparece un aviso amarillo con el saldo pendiente.
 * **Liberar mesa (sin consumo)**: solo aparece si la mesa no tiene comanda; sirve para una
   mesa abierta por error.
 
 Sin internet, las comandas se guardan en el dispositivo y se envían al reconectar (aviso amarillo).
+
+## 2.1 Pedidos para llevar y a domicilio (sin mesa)
+
+Menú **Pedidos / llevar** (mesero, cajero, gerente, admin):
+
+1. **+ Nuevo pedido** → elige *Para llevar* o *A domicilio*. Para domicilio, teléfono y dirección son obligatorios.
+2. Elige productos por categoría y toca **Enviar a cocina** (en cocina aparece como "Para llevar"/"A domicilio").
+3. El pedido queda en la lista de pendientes con el estado de cada partida. Cuando el cliente paga o recoge, toca **Cobrar**:
+   se abre la cuenta y se cobra igual que en una mesa (sección 4). Al cerrar la cuenta, el pedido sale de la lista.
 
 ## 3. Cocina – KDS
 
@@ -68,6 +78,9 @@ Flujo completo, igual para cualquier rol con acceso a Mesas:
 Cuentas divididas por producto: si la mesa tiene más de una cuenta, la mesa se libera cuando
 **todas** estén cerradas y no queden partidas sin cobrar.
 
+> **Importante:** generar o imprimir la cuenta **no libera** la mesa; hay que **cobrar y cerrar** la cuenta.
+> Si regresas a la mesa y vuelves a tocar "Cobrar cuenta", el sistema retoma la misma cuenta (no crea otra).
+
 Para **imprimir/reimprimir ticket** usa el botón al final de la cuenta. El ticket no tiene
 validez fiscal salvo que se facture (CFDI).
 
@@ -84,12 +97,30 @@ Indicadores del negocio por rango de fechas. Cómo se calcula cada uno: [`KPIS.m
 
 ## 7. Personal (admin, gerente)
 
-Alta y edición de empleados y su rol, registro de **entrada/salida** (asistencia) e **incidencias**.
+Tarjetas por empleado, con búsqueda y la casilla "Mostrar dados de baja".
+
+* **Editar**: nombre, correo (su usuario), **nueva contraseña** (opcional), **rol**, puesto, **sueldo**, fecha de ingreso y si está activo.
+* **Dar de baja / Reactivar**: un empleado de baja ya no puede entrar, pero su historial se conserva (lo recomendado).
+* **Eliminar**: borra al empleado por completo; solo se permite si nunca ha tomado comandas, cobrado ni operado caja. Si ya tiene historial, el sistema lo impide y se debe dar de baja. No puedes darte de baja ni eliminarte a ti mismo.
+* **Asistencia**: historial de entradas/salidas con duración; gerencia puede marcar entrada/salida por alguien que lo olvidó.
+* **Incidencia**: registrar falta, retardo o permiso, con nota, y ver el historial.
+
+### Checador (todos los roles)
+
+Menú **Mi checador**: cada empleado marca su **entrada** al llegar y su **salida** al terminar; se ve cuánto lleva
+trabajado y sus últimos registros. Cada quien solo puede marcar y ver lo suyo (gerencia ve a todos desde Personal).
 
 ## 8. Catálogo (admin, gerente)
 
-Categorías, productos (precio, activo/inactivo) y grupos de modificadores con sus opciones
-(y costo extra, si lo hay). Los cambios de precio no alteran cuentas ya cerradas.
+Dos pestañas:
+
+* **Productos**: categorías a la izquierda (crear, renombrar, eliminar si están vacías) y tarjetas de producto a la derecha, con búsqueda.
+  Cada producto se puede **editar** (nombre, categoría, precio, qué grupos de opciones ofrece), **ocultar/mostrar** en el menú (sin perder su historial)
+  y **eliminar** (solo si nunca se ha vendido; si ya se vendió, ocúltalo).
+* **Modificadores**: grupos de opciones (ej. "Guisado": pastor, suadero; "Extras": queso +$10). Cada grupo puede ser obligatorio y/o de varias opciones;
+  se agregan, editan y quitan opciones con su costo extra. Luego se asignan al producto al editarlo.
+
+Los cambios de precio no alteran cuentas ya cerradas.
 
 ## 9. Zonas y mesas (admin, gerente)
 

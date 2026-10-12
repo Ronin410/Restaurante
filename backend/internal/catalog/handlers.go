@@ -33,7 +33,11 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/modifier-groups", func(r chi.Router) {
 		r.Get("/", h.listModifierGroups)
 		r.With(manage).Post("/", h.createModifierGroup)
+		r.With(manage).Put("/{id}", h.updateModifierGroup)
+		r.With(manage).Delete("/{id}", h.deleteModifierGroup)
 		r.With(manage).Post("/{id}/options", h.addModifierOption)
+		r.With(manage).Put("/{id}/options/{optionId}", h.updateModifierOption)
+		r.With(manage).Delete("/{id}/options/{optionId}", h.deleteModifierOption)
 	})
 
 	r.Route("/products", func(r chi.Router) {
@@ -41,6 +45,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Get("/{id}", h.getProduct)
 		r.With(manage).Post("/", h.createProduct)
 		r.With(manage).Put("/{id}", h.updateProduct)
+		r.With(manage).Delete("/{id}", h.deleteProduct)
 	})
 }
 
@@ -93,10 +98,10 @@ func (h *Handler) deleteCategory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.DeleteCategory(id); err != nil {
-		httpx.Error(w, http.StatusInternalServerError, err.Error())
+		writeErr(w, err)
 		return
 	}
-	httpx.JSON(w, http.StatusNoContent, nil)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) listModifierGroups(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +163,10 @@ func (h *Handler) getProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := h.svc.GetProduct(id)
 	if err != nil {
+		if errors.Is(err, ErrInUse) {
+			httpx.Error(w, http.StatusConflict, err.Error())
+			return
+		}
 		if errors.Is(err, ErrNotFound) {
 			httpx.Error(w, http.StatusNotFound, err.Error())
 			return
@@ -214,9 +223,99 @@ func writeErr(w http.ResponseWriter, err error) {
 		httpx.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if errors.Is(err, ErrInUse) {
+		httpx.Error(w, http.StatusConflict, err.Error())
+		return
+	}
 	if errors.Is(err, ErrNotFound) {
 		httpx.Error(w, http.StatusNotFound, err.Error())
 		return
 	}
 	httpx.Error(w, http.StatusInternalServerError, err.Error())
+}
+
+func (h *Handler) updateModifierGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var in ModifierGroupInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+	g, err := h.svc.UpdateModifierGroup(id, in)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, g)
+}
+
+func (h *Handler) deleteModifierGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if err := h.svc.DeleteModifierGroup(id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func optionParams(r *http.Request) (int, int, error) {
+	g, err := idParam(r)
+	if err != nil {
+		return 0, 0, err
+	}
+	o, err := strconv.Atoi(chi.URLParam(r, "optionId"))
+	return g, o, err
+}
+
+func (h *Handler) updateModifierOption(w http.ResponseWriter, r *http.Request) {
+	g, o, err := optionParams(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var in ModifierOptionInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+	opt, err := h.svc.UpdateModifierOption(g, o, in)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, opt)
+}
+
+func (h *Handler) deleteModifierOption(w http.ResponseWriter, r *http.Request) {
+	g, o, err := optionParams(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if err := h.svc.DeleteModifierOption(g, o); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) deleteProduct(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if err := h.svc.DeleteProduct(id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

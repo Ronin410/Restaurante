@@ -774,3 +774,158 @@ func TestZonesAndTablesManagement(t *testing.T) {
 		}
 	})
 }
+
+// TestAccountRegenerationAndTakeout: generar cuenta marca la mesa, volver a
+// generarla retoma la cuenta abierta (en vez de error) y un pedido para llevar
+// se cobra sin mesa; al cerrar la cuenta la comanda se cierra sola.
+func TestAccountRegenerationAndTakeout(t *testing.T) {
+	env := newTestEnv(t)
+	env.do(http.MethodPost, "/api/v1/tables/1/open", env.tokens["mesero"], map[string]interface{}{}, nil)
+	env.do(http.MethodPost, "/api/v1/orders/", env.tokens["mesero"], map[string]interface{}{
+		"table_id": 1, "type": "mesa", "items": []map[string]interface{}{{"product_id": 2, "qty": 2}},
+	}, nil)
+
+	var a1, a2 struct {
+		ID int `json:"id"`
+	}
+	if code := env.do(http.MethodPost, "/api/v1/accounts/generate", env.tokens["cajero"], map[string]int{"table_id": 1}, &a1); code != http.StatusCreated {
+		t.Fatalf("generar: %d", code)
+	}
+	var tb struct {
+		Status string `json:"status"`
+	}
+	env.do(http.MethodGet, "/api/v1/tables/1", env.tokens["cajero"], nil, &tb)
+	if tb.Status != "cuenta_solicitada" {
+		t.Fatalf("la mesa debía quedar en cuenta_solicitada, está %q", tb.Status)
+	}
+	if code := env.do(http.MethodPost, "/api/v1/accounts/generate", env.tokens["cajero"], map[string]int{"table_id": 1}, &a2); code != http.StatusCreated && code != http.StatusOK {
+		t.Fatalf("regenerar debía retomar la cuenta abierta, code=%d", code)
+	}
+	if a2.ID != a1.ID {
+		t.Fatalf("esperaba la misma cuenta %d, obtuve %d", a1.ID, a2.ID)
+	}
+	// Cobrar y cerrar: la mesa se libera y su comanda se cierra.
+	env.do(http.MethodPost, fmt.Sprintf("/api/v1/accounts/%d/payments", a1.ID), env.tokens["cajero"], map[string]interface{}{"method": "efectivo", "amount": 50}, nil)
+	if code := env.do(http.MethodPost, fmt.Sprintf("/api/v1/accounts/%d/close", a1.ID), env.tokens["cajero"], nil, nil); code != http.StatusOK {
+		t.Fatalf("cerrar: %d", code)
+	}
+	var open []struct{}
+	env.do(http.MethodGet, "/api/v1/orders/?table_id=1", env.tokens["cajero"], nil, &open)
+	if len(open) != 0 {
+		t.Fatalf("la comanda cobrada debía cerrarse, hay %d abiertas", len(open))
+	}
+
+	// Pedido para llevar: sin mesa.
+	var order struct {
+		ID int `json:"id"`
+	}
+	if code := env.do(http.MethodPost, "/api/v1/orders/", env.tokens["cajero"], map[string]interface{}{
+		"type": "llevar", "customer_name": "Juan", "items": []map[string]interface{}{{"product_id": 1, "qty": 2, "modifier_option_ids": []int{1}}},
+	}, &order); code != http.StatusCreated {
+		t.Fatalf("crear pedido llevar: %d", code)
+	}
+	var pend []struct {
+		ID int `json:"id"`
+	}
+	env.do(http.MethodGet, "/api/v1/orders/?no_table=1", env.tokens["cajero"], nil, &pend)
+	if len(pend) != 1 || pend[0].ID != order.ID {
+		t.Fatalf("pedidos sin mesa pendientes inesperados: %+v", pend)
+	}
+	var acc struct {
+		ID      int     `json:"id"`
+		Balance float64 `json:"balance"`
+	}
+	if code := env.do(http.MethodPost, "/api/v1/accounts/generate", env.tokens["cajero"], map[string]int{"order_id": order.ID}, &acc); code != http.StatusCreated {
+		t.Fatalf("cuenta de pedido: %d", code)
+	}
+	env.do(http.MethodPost, fmt.Sprintf("/api/v1/accounts/%d/payments", acc.ID), env.tokens["cajero"], map[string]interface{}{"method": "efectivo", "amount": acc.Balance}, nil)
+	if code := env.do(http.MethodPost, fmt.Sprintf("/api/v1/accounts/%d/close", acc.ID), env.tokens["cajero"], nil, nil); code != http.StatusOK {
+		t.Fatalf("cerrar cuenta de pedido: %d", code)
+	}
+	env.do(http.MethodGet, "/api/v1/orders/?no_table=1", env.tokens["cajero"], nil, &pend)
+	if len(pend) != 0 {
+		t.Fatalf("el pedido cobrado debía salir de pendientes")
+	}
+}
+
+// TestEmployeeManagement: editar sueldo/rol/clave, baja, eliminar, y que el
+// checador y los datos de otros empleados solo los vea el propio o gerencia.
+func TestEmployeeManagement(t *testing.T) {
+	env := newTestEnv(t)
+	admin, mesero := env.tokens["admin"], env.tokens["mesero"]
+	mid := env.userIDs["mesero"]
+
+	var u struct {
+		Role   string  `json:"role"`
+		Salary float64 `json:"salary"`
+		Active bool    `json:"active"`
+	}
+	code := env.do(http.MethodPut, fmt.Sprintf("/api/v1/employees/%d", mid), admin, map[string]interface{}{
+		"name": "Mario Mesero", "role": "cajero", "position": "Caja", "salary": 9000, "active": true, "password": "nueva123",
+	}, &u)
+	if code != http.StatusOK || u.Role != "cajero" || u.Salary != 9000 {
+		t.Fatalf("editar empleado: code=%d %+v", code, u)
+	}
+	if code := env.do(http.MethodPost, "/api/v1/auth/login", "", map[string]string{"email": "mesero@test.mx", "password": "nueva123"}, nil); code != http.StatusOK {
+		t.Fatalf("login con la clave nueva: %d", code)
+	}
+	adminID := env.userIDs["admin"]
+	if code := env.do(http.MethodPut, fmt.Sprintf("/api/v1/employees/%d", adminID), admin, map[string]interface{}{"name": "A", "role": "admin", "active": false}, nil); code != http.StatusBadRequest {
+		t.Fatalf("darse de baja a uno mismo: esperaba 400, obtuve %d", code)
+	}
+
+	// Checador: cada quien el suyo.
+	if code := env.do(http.MethodPost, fmt.Sprintf("/api/v1/employees/%d/attendance/clock-in", mid), mesero, nil, nil); code != http.StatusCreated {
+		t.Fatalf("checar entrada propia: %d", code)
+	}
+	if code := env.do(http.MethodPost, fmt.Sprintf("/api/v1/employees/%d/attendance/clock-in", adminID), mesero, nil, nil); code != http.StatusForbidden {
+		t.Fatalf("checar a otro: esperaba 403, obtuve %d", code)
+	}
+	if code := env.do(http.MethodGet, fmt.Sprintf("/api/v1/employees/%d", adminID), mesero, nil, nil); code != http.StatusForbidden {
+		t.Fatalf("ver ficha ajena: esperaba 403, obtuve %d", code)
+	}
+
+	// Eliminar: uno con historial (checador) sí se puede borrar sin ventas; uno con ventas no.
+	var nu struct {
+		ID int `json:"id"`
+	}
+	env.do(http.MethodPost, "/api/v1/employees/", admin, map[string]interface{}{"name": "Temp", "email": "t@t.mx", "password": "temporal1", "role": "mesero"}, &nu)
+	env.do(http.MethodPost, fmt.Sprintf("/api/v1/employees/%d/attendance/clock-in", nu.ID), admin, nil, nil)
+	if code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/employees/%d", nu.ID), admin, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("eliminar empleado sin ventas: %d", code)
+	}
+	env.do(http.MethodPost, "/api/v1/tables/1/open", env.tokens["cocina"], map[string]interface{}{}, nil)
+	if code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/employees/%d", env.userIDs["cocina"]), admin, nil, nil); code != http.StatusConflict {
+		t.Fatalf("eliminar empleado con historial: esperaba 409, obtuve %d", code)
+	}
+	if code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/employees/%d", adminID), admin, nil, nil); code != http.StatusBadRequest {
+		t.Fatalf("eliminarse a uno mismo: esperaba 400, obtuve %d", code)
+	}
+}
+
+// TestCatalogManagement: editar/borrar opciones, grupos y productos.
+func TestCatalogManagement(t *testing.T) {
+	env := newTestEnv(t)
+	admin := env.tokens["admin"]
+	if code := env.do(http.MethodPut, "/api/v1/modifier-groups/1/options/2", admin, map[string]interface{}{"name": "Suadero XL", "price_delta": 5}, nil); code != http.StatusOK {
+		t.Fatalf("editar opción: %d", code)
+	}
+	if code := env.do(http.MethodPut, "/api/v1/modifier-groups/1", admin, map[string]interface{}{"name": "Carne", "required": true}, nil); code != http.StatusOK {
+		t.Fatalf("editar grupo: %d", code)
+	}
+	if code := env.do(http.MethodDelete, "/api/v1/modifier-groups/1/options/2", admin, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("borrar opción: %d", code)
+	}
+	if code := env.do(http.MethodDelete, "/api/v1/modifier-groups/1", admin, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("borrar grupo: %d", code)
+	}
+	if code := env.do(http.MethodDelete, "/api/v1/products/2", admin, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("borrar producto sin ventas: %d", code)
+	}
+	if code := env.do(http.MethodDelete, "/api/v1/categories/1", admin, nil, nil); code != http.StatusConflict {
+		t.Fatalf("borrar categoría con productos: esperaba 409, obtuve %d", code)
+	}
+	if code := env.do(http.MethodDelete, "/api/v1/products/1", env.tokens["mesero"], nil, nil); code != http.StatusForbidden {
+		t.Fatalf("mesero borrar producto: esperaba 403, obtuve %d", code)
+	}
+}

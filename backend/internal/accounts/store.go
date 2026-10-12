@@ -66,7 +66,7 @@ func (s *Store) itemsBelongToTable(tableID int, itemIDs []int) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) createAccount(tableID int, splitMode string) (int, error) {
+func (s *Store) createAccount(tableID *int, splitMode string) (int, error) {
 	var id int
 	err := s.db.QueryRow(`INSERT INTO accounts (table_id, split_mode) VALUES (?, ?) RETURNING id`, tableID, splitMode).Scan(&id)
 	if err != nil {
@@ -94,7 +94,7 @@ func (s *Store) GenerateAccount(tableID int) (Account, error) {
 	if len(items) == 0 {
 		return Account{}, ErrNoItems
 	}
-	accountID, err := s.createAccount(tableID, "completa")
+	accountID, err := s.createAccount(&tableID, "completa")
 	if err != nil {
 		return Account{}, err
 	}
@@ -123,7 +123,7 @@ func (s *Store) SplitByProduct(tableID int, groups [][]int) ([]Account, error) {
 		if !ok {
 			return nil, errors.New("uno o más productos ya fueron asignados a otra cuenta o no pertenecen a la mesa")
 		}
-		accountID, err := s.createAccount(tableID, "producto")
+		accountID, err := s.createAccount(&tableID, "producto")
 		if err != nil {
 			return nil, err
 		}
@@ -295,6 +295,9 @@ func (s *Store) CloseAccount(id, closedBy int) (Account, error) {
 	if err != nil {
 		return Account{}, err
 	}
+	if err := s.closeSettledOrders(id); err != nil {
+		return Account{}, err
+	}
 	return s.GetAccount(id)
 }
 
@@ -340,4 +343,83 @@ func (s *Store) TableHasPendingBilling(tableID int) (bool, error) {
 		SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id = oi.order_id
 		WHERE o.table_id = ? AND oi.account_id IS NULL AND oi.status != 'cancelado'`, tableID).Scan(&loose)
 	return loose > 0, err
+}
+
+// OpenAccountForTable devuelve el id de la cuenta abierta más reciente de la
+// mesa, o 0 si no hay.
+func (s *Store) OpenAccountForTable(tableID int) (int, error) {
+	var id int
+	err := s.db.QueryRow(`SELECT id FROM accounts WHERE table_id = ? AND status = 'abierta' ORDER BY id DESC LIMIT 1`, tableID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return id, err
+}
+
+// GenerateAccountForOrder crea la cuenta de un pedido sin mesa (para llevar o
+// a domicilio) con todas sus partidas pendientes de cobro.
+func (s *Store) GenerateAccountForOrder(orderID int) (Account, error) {
+	var orderType string
+	var tableID sql.NullInt64
+	if err := s.db.QueryRow(`SELECT type, table_id FROM orders WHERE id = ?`, orderID).Scan(&orderType, &tableID); err != nil {
+		if err == sql.ErrNoRows {
+			return Account{}, ErrNoItems
+		}
+		return Account{}, err
+	}
+	rows, err := s.db.Query(`SELECT id FROM order_items WHERE order_id = ? AND account_id IS NULL AND status != 'cancelado'`, orderID)
+	if err != nil {
+		return Account{}, err
+	}
+	var ids []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return Account{}, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if len(ids) == 0 {
+		return Account{}, ErrNoItems
+	}
+	var tid *int
+	if tableID.Valid {
+		v := int(tableID.Int64)
+		tid = &v
+	}
+	accountID, err := s.createAccount(tid, "completa")
+	if err != nil {
+		return Account{}, err
+	}
+	if err := s.assignItems(accountID, ids); err != nil {
+		return Account{}, err
+	}
+	return s.GetAccount(accountID)
+}
+
+// OpenAccountForOrder devuelve la cuenta abierta ligada a las partidas del pedido, o 0.
+func (s *Store) OpenAccountForOrder(orderID int) (int, error) {
+	var id int
+	err := s.db.QueryRow(`
+		SELECT a.id FROM accounts a
+		WHERE a.status = 'abierta' AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.account_id = a.id AND oi.order_id = ?)
+		ORDER BY a.id DESC LIMIT 1`, orderID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return id, err
+}
+
+// closeSettledOrders cierra las comandas de la cuenta cuando ya no les queda
+// ninguna partida viva sin cobrar. Así una mesa que se vuelve a abrir empieza
+// con comanda nueva y los pedidos para llevar salen de la lista de pendientes.
+func (s *Store) closeSettledOrders(accountID int) error {
+	_, err := s.db.Exec(`
+		UPDATE orders SET status = 'cerrada', closed_at = datetime('now')
+		WHERE status = 'abierta'
+		  AND id IN (SELECT DISTINCT order_id FROM order_items WHERE account_id = ?)
+		  AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = orders.id AND oi.account_id IS NULL AND oi.status != 'cancelado')`, accountID)
+	return err
 }

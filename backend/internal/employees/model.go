@@ -25,6 +25,9 @@ type CreateUserInput struct {
 
 type UpdateUserInput struct {
 	Name     string     `json:"name"`
+	Email    string     `json:"email"`    // opcional: vacío = no cambia
+	Password string     `json:"password"` // opcional: vacío = no cambia
+	HireDate string     `json:"hire_date"`
 	Role     authn.Role `json:"role"`
 	Position string     `json:"position"`
 	Salary   float64    `json:"salary"`

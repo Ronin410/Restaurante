@@ -38,7 +38,7 @@ export function KdsPage() {
                       {item.qty}× {item.product_name}
                     </strong>
                     <span className="muted">
-                      {item.order_type === 'mesa' ? `Mesa ${item.table_number}` : item.order_type}
+                      {item.order_type === 'mesa' ? `Mesa ${item.table_number}` : item.order_type === 'llevar' ? 'Para llevar' : 'A domicilio'}
                     </span>
                   </div>
                   {(item.notes || (item.modifiers && item.modifiers.length > 0)) && (

@@ -44,7 +44,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 			tableID = &id
 		}
 	}
-	list, err := h.svc.ListOpenOrders(tableID)
+	list, err := h.svc.ListOpenOrders(tableID, r.URL.Query().Get("no_table") == "1")
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return

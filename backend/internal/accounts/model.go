@@ -57,6 +57,7 @@ type Account struct {
 
 type GenerateAccountInput struct {
 	TableID int `json:"table_id"`
+	OrderID int `json:"order_id"` // pedidos para llevar/domicilio (sin mesa)
 }
 
 type SplitByProductInput struct {

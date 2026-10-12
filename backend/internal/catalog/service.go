@@ -74,3 +74,25 @@ func (s *Service) UpdateProduct(id int, in ProductInput) (Product, error) {
 	}
 	return s.store.UpdateProduct(id, in)
 }
+
+func (s *Service) UpdateModifierGroup(id int, in ModifierGroupInput) (ModifierGroup, error) {
+	if in.Name == "" {
+		return ModifierGroup{}, fmt.Errorf("%w: nombre obligatorio", ErrValidation)
+	}
+	return s.store.UpdateModifierGroup(id, in)
+}
+
+func (s *Service) DeleteModifierGroup(id int) error { return s.store.DeleteModifierGroup(id) }
+
+func (s *Service) UpdateModifierOption(groupID, optionID int, in ModifierOptionInput) (ModifierOption, error) {
+	if in.Name == "" {
+		return ModifierOption{}, fmt.Errorf("%w: nombre obligatorio", ErrValidation)
+	}
+	return s.store.UpdateModifierOption(groupID, optionID, in)
+}
+
+func (s *Service) DeleteModifierOption(groupID, optionID int) error {
+	return s.store.DeleteModifierOption(groupID, optionID)
+}
+
+func (s *Service) DeleteProduct(id int) error { return s.store.DeleteProduct(id) }

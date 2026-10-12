@@ -2,6 +2,8 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { RequireRole } from './auth/RequireRole'
 import { LoginPage } from './pages/LoginPage'
+import { TimeclockPage } from './pages/TimeclockPage'
+import { OrdersPage } from './pages/OrdersPage'
 import { TablesPage } from './pages/TablesPage'
 import { TableDetailPage } from './pages/TableDetailPage'
 import { AccountPage, NewAccountPage } from './pages/AccountPage'
@@ -35,6 +37,15 @@ export function App() {
             </RequireRole>
           }
         />
+        <Route
+          path="/pedidos"
+          element={
+            <RequireRole roles={['admin', 'gerente', 'cajero', 'mesero']}>
+              <OrdersPage />
+            </RequireRole>
+          }
+        />
+        <Route path="/checador" element={<TimeclockPage />} />
         <Route
           path="/mesas/:id"
           element={

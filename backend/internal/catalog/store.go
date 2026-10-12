@@ -7,6 +7,7 @@ import (
 	"github.com/ronin410/restaurante/backend/internal/dbx"
 )
 
+var ErrInUse = errors.New("no se puede eliminar porque ya se usa en ventas o en otros elementos; mejor desactívalo")
 var ErrNotFound = errors.New("elemento de catálogo no encontrado")
 
 type Store struct {
@@ -55,7 +56,10 @@ func (s *Store) UpdateCategory(id int, in CategoryInput) (Category, error) {
 
 func (s *Store) DeleteCategory(id int) error {
 	_, err := s.db.Exec(`DELETE FROM categories WHERE id = ?`, id)
-	return err
+	if err != nil {
+		return ErrInUse
+	}
+	return nil
 }
 
 // ---- Modificadores ----
@@ -268,4 +272,97 @@ func (s *Store) setProductGroups(productID int, groupIDs []int) error {
 		}
 	}
 	return nil
+}
+
+// ---- Edición y baja de modificadores y productos ----
+
+func (s *Store) UpdateModifierGroup(id int, in ModifierGroupInput) (ModifierGroup, error) {
+	res, err := s.db.Exec(`UPDATE modifier_groups SET name = ?, required = ?, multiple = ? WHERE id = ?`,
+		in.Name, boolInt(in.Required), boolInt(in.Multiple), id)
+	if err != nil {
+		return ModifierGroup{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ModifierGroup{}, ErrNotFound
+	}
+	groups, err := s.ListModifierGroups()
+	if err != nil {
+		return ModifierGroup{}, err
+	}
+	for _, g := range groups {
+		if g.ID == id {
+			return g, nil
+		}
+	}
+	return ModifierGroup{}, ErrNotFound
+}
+
+// DeleteModifierGroup borra el grupo, sus opciones y su asignación a productos.
+func (s *Store) DeleteModifierGroup(id int) error {
+	tx, err := s.db.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`DELETE FROM product_modifier_groups WHERE group_id = $1`,
+		`DELETE FROM modifier_options WHERE group_id = $1`,
+		`DELETE FROM modifier_groups WHERE id = $1`,
+	} {
+		if _, err := tx.Exec(q, id); err != nil {
+			return ErrInUse
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) UpdateModifierOption(groupID, optionID int, in ModifierOptionInput) (ModifierOption, error) {
+	res, err := s.db.Exec(`UPDATE modifier_options SET name = ?, price_delta = ? WHERE id = ? AND group_id = ?`,
+		in.Name, in.PriceDelta, optionID, groupID)
+	if err != nil {
+		return ModifierOption{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ModifierOption{}, ErrNotFound
+	}
+	return ModifierOption{ID: optionID, GroupID: groupID, Name: in.Name, PriceDelta: in.PriceDelta}, nil
+}
+
+func (s *Store) DeleteModifierOption(groupID, optionID int) error {
+	res, err := s.db.Exec(`DELETE FROM modifier_options WHERE id = ? AND group_id = ?`, optionID, groupID)
+	if err != nil {
+		return ErrInUse
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteProduct borra el producto si nunca se vendió; si ya tiene ventas la
+// base lo impide (ErrInUse) y lo correcto es desactivarlo.
+func (s *Store) DeleteProduct(id int) error {
+	tx, err := s.db.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM product_modifier_groups WHERE product_id = $1`, id); err != nil {
+		return ErrInUse
+	}
+	res, err := tx.Exec(`DELETE FROM products WHERE id = $1`, id)
+	if err != nil {
+		return ErrInUse
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

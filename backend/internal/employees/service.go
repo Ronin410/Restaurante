@@ -72,7 +72,13 @@ func (s *Service) CreateEmployee(in CreateUserInput) (User, error) {
 	return s.store.Create(in, hash)
 }
 
-func (s *Service) UpdateEmployee(id int, in UpdateUserInput) (User, error) {
+func (s *Service) UpdateEmployee(actorID, id int, in UpdateUserInput) (User, error) {
+	if actorID == id && !in.Active {
+		return User{}, fmt.Errorf("%w: no puedes darte de baja a ti mismo", ErrValidation)
+	}
+	if in.Password != "" && len(in.Password) < 6 {
+		return User{}, fmt.Errorf("%w: la contraseña debe tener al menos 6 caracteres", ErrValidation)
+	}
 	if in.Name == "" {
 		return User{}, fmt.Errorf("%w: nombre obligatorio", ErrValidation)
 	}
@@ -80,6 +86,13 @@ func (s *Service) UpdateEmployee(id int, in UpdateUserInput) (User, error) {
 		return User{}, fmt.Errorf("%w: rol inválido", ErrValidation)
 	}
 	return s.store.Update(id, in)
+}
+
+func (s *Service) DeleteEmployee(actorID, id int) error {
+	if actorID == id {
+		return fmt.Errorf("%w: no puedes eliminarte a ti mismo", ErrValidation)
+	}
+	return s.store.Delete(id)
 }
 
 func (s *Service) ListEmployees(activeOnly bool) ([]User, error) {
