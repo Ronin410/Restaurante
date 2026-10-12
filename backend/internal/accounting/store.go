@@ -303,3 +303,124 @@ func (s *Store) sumActiveSalaries() (float64, error) {
 func simulatedUUID(id int) string {
 	return fmt.Sprintf("SIMULADO-0000-0000-0000-%012d", id)
 }
+
+// ---- Edición y baja de registros (contador / admin) ----
+
+func (s *Store) getExpense(id int) (Expense, error) {
+	var e Expense
+	err := s.db.QueryRow(`SELECT id, category, description, amount, supplier, date, created_by, created_at FROM expenses WHERE id = ?`, id).
+		Scan(&e.ID, &e.Category, &e.Description, &e.Amount, &e.Supplier, &e.Date, &e.CreatedBy, &e.CreatedAt)
+	if err == sql.ErrNoRows {
+		return e, ErrNotFound
+	}
+	return e, err
+}
+
+func (s *Store) UpdateExpense(id int, in ExpenseInput) (Expense, error) {
+	res, err := s.db.Exec(`UPDATE expenses SET category = ?, description = ?, amount = ?, supplier = ?, date = ? WHERE id = ?`,
+		in.Category, in.Description, in.Amount, in.Supplier, in.Date, id)
+	if err != nil {
+		return Expense{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Expense{}, ErrNotFound
+	}
+	return s.getExpense(id)
+}
+
+func (s *Store) DeleteExpense(id int) error { return s.deleteByID("expenses", id) }
+
+func (s *Store) getPurchase(id int) (Purchase, error) {
+	var p Purchase
+	err := s.db.QueryRow(`SELECT id, supplier, description, amount, date, created_by, created_at FROM purchases WHERE id = ?`, id).
+		Scan(&p.ID, &p.Supplier, &p.Description, &p.Amount, &p.Date, &p.CreatedBy, &p.CreatedAt)
+	if err == sql.ErrNoRows {
+		return p, ErrNotFound
+	}
+	return p, err
+}
+
+func (s *Store) UpdatePurchase(id int, in PurchaseInput) (Purchase, error) {
+	res, err := s.db.Exec(`UPDATE purchases SET supplier = ?, description = ?, amount = ?, date = ? WHERE id = ?`,
+		in.Supplier, in.Description, in.Amount, in.Date, id)
+	if err != nil {
+		return Purchase{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Purchase{}, ErrNotFound
+	}
+	return s.getPurchase(id)
+}
+
+func (s *Store) DeletePurchase(id int) error { return s.deleteByID("purchases", id) }
+
+func (s *Store) UpdateInventoryItem(id int, in InventoryItemInput) (InventoryItem, error) {
+	res, err := s.db.Exec(`UPDATE inventory_items SET name = ?, unit = ?, min_stock = ?, updated_at = datetime('now') WHERE id = ?`,
+		in.Name, in.Unit, in.MinStock, id)
+	if err != nil {
+		return InventoryItem{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return InventoryItem{}, ErrNotFound
+	}
+	return s.GetInventoryItem(id)
+}
+
+// DeleteInventoryItem borra el artículo junto con su historial de movimientos.
+func (s *Store) DeleteInventoryItem(id int) error {
+	if _, err := s.GetInventoryItem(id); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DELETE FROM inventory_movements WHERE inventory_item_id = ?`, id); err != nil {
+		return err
+	}
+	return s.deleteByID("inventory_items", id)
+}
+
+// DeleteMovement elimina un movimiento y revierte su efecto en el existente.
+func (s *Store) DeleteMovement(itemID, movementID int) (InventoryItem, error) {
+	var typ string
+	var qty float64
+	err := s.db.QueryRow(`SELECT type, qty FROM inventory_movements WHERE id = ? AND inventory_item_id = ?`, movementID, itemID).Scan(&typ, &qty)
+	if err == sql.ErrNoRows {
+		return InventoryItem{}, ErrNotFound
+	}
+	if err != nil {
+		return InventoryItem{}, err
+	}
+	undo := -qty
+	if typ == "salida" || typ == "merma" {
+		undo = qty
+	}
+	if _, err := s.db.Exec(`DELETE FROM inventory_movements WHERE id = ?`, movementID); err != nil {
+		return InventoryItem{}, err
+	}
+	if _, err := s.db.Exec(`UPDATE inventory_items SET stock = stock + ?, updated_at = datetime('now') WHERE id = ?`, undo, itemID); err != nil {
+		return InventoryItem{}, err
+	}
+	return s.GetInventoryItem(itemID)
+}
+
+// CancelInvoice marca la factura como cancelada. No se borra: un documento
+// fiscal se cancela, no desaparece.
+func (s *Store) CancelInvoice(id int) (Invoice, error) {
+	res, err := s.db.Exec(`UPDATE invoices SET status = 'cancelada' WHERE id = ?`, id)
+	if err != nil {
+		return Invoice{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Invoice{}, ErrNotFound
+	}
+	return s.GetInvoice(id)
+}
+
+func (s *Store) deleteByID(table string, id int) error {
+	res, err := s.db.Exec(`DELETE FROM `+table+` WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

@@ -102,7 +102,10 @@ export function AccountPage() {
 
   const closeMutation = useMutation({
     mutationFn: () => AccountsApi.close(accountId),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['tables'] })
+    },
   })
 
   if (isLoading || !account) return <p>Cargando…</p>
@@ -266,7 +269,15 @@ export function AccountPage() {
                 Cerrar cuenta
               </button>
             ) : (
-              <p>✅ Cuenta cerrada.</p>
+              <>
+                <p>
+                  ✅ Cuenta cerrada. La mesa se libera sola cuando ya no queda nada por cobrar en ella
+                  (el sistema no maneja el paso de limpieza).
+                </p>
+                <button className="btn primary" style={{ width: '100%' }} onClick={() => navigate('/mesas')}>
+                  Volver a mesas
+                </button>
+              </>
             )}
             {closeMutation.isError && <div className="error-banner">{(closeMutation.error as Error).message}</div>}
             <button className="btn" style={{ width: '100%', marginTop: '0.5rem' }} onClick={() => window.print()}>

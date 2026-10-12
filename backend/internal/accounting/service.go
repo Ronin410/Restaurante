@@ -43,6 +43,48 @@ func (s *Service) CreateExpense(in ExpenseInput, createdBy int) (Expense, error)
 	return s.store.CreateExpense(in, createdBy)
 }
 
+func (s *Service) UpdateExpense(id int, in ExpenseInput) (Expense, error) {
+	if in.Description == "" || in.Amount <= 0 {
+		return Expense{}, fmt.Errorf("%w: descripción y monto (mayor a cero) son obligatorios", ErrValidation)
+	}
+	if in.Date == "" {
+		in.Date = time.Now().Format("2006-01-02")
+	}
+	return s.store.UpdateExpense(id, in)
+}
+
+func (s *Service) DeleteExpense(id int) error { return s.store.DeleteExpense(id) }
+
+func (s *Service) UpdatePurchase(id int, in PurchaseInput) (Purchase, error) {
+	if in.Supplier == "" || in.Amount <= 0 {
+		return Purchase{}, fmt.Errorf("%w: proveedor y monto (mayor a cero) son obligatorios", ErrValidation)
+	}
+	if in.Date == "" {
+		in.Date = time.Now().Format("2006-01-02")
+	}
+	return s.store.UpdatePurchase(id, in)
+}
+
+func (s *Service) DeletePurchase(id int) error { return s.store.DeletePurchase(id) }
+
+func (s *Service) UpdateInventoryItem(id int, in InventoryItemInput) (InventoryItem, error) {
+	if in.Name == "" {
+		return InventoryItem{}, fmt.Errorf("%w: nombre obligatorio", ErrValidation)
+	}
+	if in.Unit == "" {
+		in.Unit = "pza"
+	}
+	return s.store.UpdateInventoryItem(id, in)
+}
+
+func (s *Service) DeleteInventoryItem(id int) error { return s.store.DeleteInventoryItem(id) }
+
+func (s *Service) DeleteMovement(itemID, movementID int) (InventoryItem, error) {
+	return s.store.DeleteMovement(itemID, movementID)
+}
+
+func (s *Service) CancelInvoice(id int) (Invoice, error) { return s.store.CancelInvoice(id) }
+
 func (s *Service) ListPurchases(from, to string) ([]Purchase, error) {
 	from, to = normalizeRange(from, to)
 	return s.store.ListPurchases(from, to)

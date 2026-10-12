@@ -8,7 +8,7 @@ import (
 
 var ErrValidation = errors.New("datos inválidos")
 
-var validStatuses = map[string]bool{"libre": true, "ocupada": true, "cuenta_solicitada": true, "limpieza": true}
+var validStatuses = map[string]bool{"libre": true, "ocupada": true, "cuenta_solicitada": true}
 
 type Service struct {
 	store *Store
@@ -103,6 +103,13 @@ func (s *Service) SetStatus(id int, status string) (Table, error) {
 		return Table{}, fmt.Errorf("%w: estatus inválido", ErrValidation)
 	}
 	return s.store.SetStatus(id, status)
+}
+
+// Release deja la mesa libre (cierra su sesión de ocupación para el KPI de
+// rotación). Lo usa el cierre de cuentas; no existe estado de limpieza.
+func (s *Service) Release(id int) error {
+	_, err := s.store.SetStatus(id, "libre")
+	return err
 }
 
 func (s *Service) AssignWaiter(id, waiterID int) (Table, error) {

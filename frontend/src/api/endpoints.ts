@@ -194,6 +194,9 @@ export const AccountingApi = {
   },
   createExpense: (input: { category: string; description: string; amount: number; supplier?: string; date?: string }) =>
     apiFetch<Expense>('/expenses/', { method: 'POST', body: input }),
+  updateExpense: (id: number, input: { category: string; description: string; amount: number; supplier?: string; date?: string }) =>
+    apiFetch<Expense>(`/expenses/${id}`, { method: 'PUT', body: input }),
+  deleteExpense: (id: number) => apiFetch<void>(`/expenses/${id}`, { method: 'DELETE' }),
   purchases: (from?: string, to?: string) => {
     const params = new URLSearchParams()
     if (from) params.set('from', from)
@@ -202,7 +205,16 @@ export const AccountingApi = {
   },
   createPurchase: (input: { supplier: string; description: string; amount: number; date?: string }) =>
     apiFetch<Purchase>('/purchases/', { method: 'POST', body: input }),
+  updatePurchase: (id: number, input: { supplier: string; description: string; amount: number; date?: string }) =>
+    apiFetch<Purchase>(`/purchases/${id}`, { method: 'PUT', body: input }),
+  deletePurchase: (id: number) => apiFetch<void>(`/purchases/${id}`, { method: 'DELETE' }),
   inventory: () => apiFetch<InventoryItem[]>('/inventory/'),
+  updateInventoryItem: (id: number, input: { name: string; unit: string; min_stock: number }) =>
+    apiFetch<InventoryItem>(`/inventory/${id}`, { method: 'PUT', body: input }),
+  deleteInventoryItem: (id: number) => apiFetch<void>(`/inventory/${id}`, { method: 'DELETE' }),
+  deleteMovement: (itemId: number, movementId: number) =>
+    apiFetch<InventoryItem>(`/inventory/${itemId}/movements/${movementId}`, { method: 'DELETE' }),
+  cancelInvoice: (id: number) => apiFetch<Invoice>(`/invoices/${id}/cancel`, { method: 'POST' }),
   createInventoryItem: (input: { name: string; unit: string; min_stock: number }) =>
     apiFetch<InventoryItem>('/inventory/', { method: 'POST', body: input }),
   addMovement: (itemId: number, input: { type: string; qty: number; reason: string }) =>

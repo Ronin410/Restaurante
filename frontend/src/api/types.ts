@@ -69,7 +69,7 @@ export interface Product {
   modifier_groups: ModifierGroup[]
 }
 
-export type TableStatus = 'libre' | 'ocupada' | 'cuenta_solicitada' | 'limpieza'
+export type TableStatus = 'libre' | 'ocupada' | 'cuenta_solicitada'
 
 export interface Zone {
   id: number

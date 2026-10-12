@@ -268,12 +268,14 @@ func TestRoleAuthorization(t *testing.T) {
 		}
 	})
 
-	t.Run("contador no puede crear gastos (solo lectura)", func(t *testing.T) {
-		code := env.do(http.MethodPost, "/api/v1/expenses/", env.tokens["contador"], map[string]interface{}{
-			"description": "renta", "amount": 100,
-		}, nil)
-		if code != http.StatusForbidden {
-			t.Fatalf("esperaba 403, obtuve %d", code)
+	t.Run("mesero y cajero no pueden crear gastos", func(t *testing.T) {
+		for _, role := range []string{"mesero", "cajero", "gerente"} {
+			code := env.do(http.MethodPost, "/api/v1/expenses/", env.tokens[role], map[string]interface{}{
+				"description": "renta", "amount": 100,
+			}, nil)
+			if code != http.StatusForbidden {
+				t.Fatalf("%s: esperaba 403, obtuve %d", role, code)
+			}
 		}
 	})
 
@@ -432,6 +434,25 @@ func TestFullRestaurantFlow(t *testing.T) {
 		t.Fatalf("cerrar cuenta falló: code=%d", code)
 	}
 
+	// 11b. Al cerrar la única cuenta, la mesa queda libre sola (sin paso de
+	// limpieza) y se puede volver a abrir; "limpieza" ya no es un estatus.
+	var freed struct {
+		Status string `json:"status"`
+	}
+	env.do(http.MethodGet, "/api/v1/tables/1", env.tokens["admin"], nil, &freed)
+	if freed.Status != "libre" {
+		t.Fatalf("la mesa debía quedar libre al cerrar la cuenta, está %q", freed.Status)
+	}
+	code = env.do(http.MethodPost, "/api/v1/tables/1/status", env.tokens["admin"], map[string]interface{}{"status": "limpieza"}, nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("esperaba 400 con estatus limpieza, obtuve %d", code)
+	}
+	code = env.do(http.MethodPost, "/api/v1/tables/1/open", env.tokens["admin"], map[string]interface{}{}, nil)
+	if code != http.StatusOK && code != http.StatusCreated {
+		t.Fatalf("la mesa liberada debía poder reabrirse, code=%d", code)
+	}
+	env.do(http.MethodPost, "/api/v1/tables/1/status", env.tokens["admin"], map[string]interface{}{"status": "libre"}, nil)
+
 	// 12. Cerrar turno de caja: debe generar corte Z sin diferencia.
 	var shifts []struct {
 		ID int `json:"id"`
@@ -582,6 +603,74 @@ func TestExpensesAndPnL(t *testing.T) {
 	}
 	if pnl.Gastos != 5000 {
 		t.Fatalf("gastos esperados 5000, obtuve %.2f", pnl.Gastos)
+	}
+}
+
+// TestAccountantCanManageRecords: el contador da de alta, edita y da de baja
+// gastos, compras, inventario y facturas; los demás roles operativos no.
+func TestAccountantCanManageRecords(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.tokens["contador"]
+
+	var exp struct {
+		ID     int     `json:"id"`
+		Amount float64 `json:"amount"`
+	}
+	if code := env.do(http.MethodPost, "/api/v1/expenses/", tok, map[string]interface{}{"description": "luz", "amount": 100, "date": "2026-02-10"}, &exp); code != http.StatusCreated {
+		t.Fatalf("contador crear gasto: %d", code)
+	}
+	if code := env.do(http.MethodPut, fmt.Sprintf("/api/v1/expenses/%d", exp.ID), tok, map[string]interface{}{"description": "luz", "amount": 250, "date": "2026-02-10"}, &exp); code != http.StatusOK || exp.Amount != 250 {
+		t.Fatalf("contador editar gasto: code=%d amount=%.2f", code, exp.Amount)
+	}
+	if code := env.do(http.MethodPut, "/api/v1/expenses/9999", tok, map[string]interface{}{"description": "x", "amount": 1}, nil); code != http.StatusNotFound {
+		t.Fatalf("editar gasto inexistente: esperaba 404, obtuve %d", code)
+	}
+	if code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/expenses/%d", exp.ID), env.tokens["cajero"], nil, nil); code != http.StatusForbidden {
+		t.Fatalf("cajero borrar gasto: esperaba 403, obtuve %d", code)
+	}
+	if code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/expenses/%d", exp.ID), tok, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("contador borrar gasto: %d", code)
+	}
+	if code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/expenses/%d", exp.ID), tok, nil, nil); code != http.StatusNotFound {
+		t.Fatalf("borrar gasto ya borrado: esperaba 404, obtuve %d", code)
+	}
+
+	var pur struct {
+		ID int `json:"id"`
+	}
+	if code := env.do(http.MethodPost, "/api/v1/purchases/", tok, map[string]interface{}{"supplier": "Tortillería", "amount": 300}, &pur); code != http.StatusCreated {
+		t.Fatalf("contador crear compra: %d", code)
+	}
+	if code := env.do(http.MethodPut, fmt.Sprintf("/api/v1/purchases/%d", pur.ID), tok, map[string]interface{}{"supplier": "Tortillería La Esquina", "amount": 320}, nil); code != http.StatusOK {
+		t.Fatalf("contador editar compra: %d", code)
+	}
+	if code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/purchases/%d", pur.ID), tok, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("contador borrar compra: %d", code)
+	}
+
+	var item struct {
+		ID    int     `json:"id"`
+		Name  string  `json:"name"`
+		Stock float64 `json:"stock"`
+	}
+	env.do(http.MethodPost, "/api/v1/inventory/", tok, map[string]interface{}{"name": "Limones", "unit": "kg", "min_stock": 2}, &item)
+	if code := env.do(http.MethodPut, fmt.Sprintf("/api/v1/inventory/%d", item.ID), tok, map[string]interface{}{"name": "Limón", "unit": "kg", "min_stock": 3}, &item); code != http.StatusOK || item.Name != "Limón" {
+		t.Fatalf("contador editar insumo: code=%d name=%s", code, item.Name)
+	}
+	env.do(http.MethodPost, fmt.Sprintf("/api/v1/inventory/%d/movements", item.ID), tok, map[string]interface{}{"type": "entrada", "qty": 10}, &item)
+	var mvs []struct {
+		ID int `json:"id"`
+	}
+	env.do(http.MethodGet, fmt.Sprintf("/api/v1/inventory/%d/movements", item.ID), tok, nil, &mvs)
+	if len(mvs) != 1 {
+		t.Fatalf("esperaba 1 movimiento, obtuve %d", len(mvs))
+	}
+	if code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/inventory/%d/movements/%d", item.ID, mvs[0].ID), tok, nil, &item); code != http.StatusOK || item.Stock != 0 {
+		t.Fatalf("borrar movimiento debía revertir el existente: code=%d stock=%.2f", code, item.Stock)
+	}
+	env.do(http.MethodPost, fmt.Sprintf("/api/v1/inventory/%d/movements", item.ID), tok, map[string]interface{}{"type": "entrada", "qty": 5}, nil)
+	if code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/inventory/%d", item.ID), tok, nil, nil); code != http.StatusNoContent {
+		t.Fatalf("contador borrar insumo con historial: %d", code)
 	}
 }
 

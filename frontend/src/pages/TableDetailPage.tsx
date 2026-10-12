@@ -108,9 +108,15 @@ export function TableDetailPage() {
         <button className="btn primary" onClick={() => navigate(`/cuentas/nueva?table=${tableId}`)}>
           Generar cuenta
         </button>
-        <button className="btn" onClick={() => statusMutation.mutate('limpieza')}>
-          Liberar (a limpieza)
-        </button>
+        {!order && table.status !== 'libre' && (
+          <button
+            className="btn"
+            title="Para una mesa abierta por error, sin consumo"
+            onClick={() => statusMutation.mutate('libre', { onSuccess: () => navigate('/mesas') })}
+          >
+            Liberar mesa (sin consumo)
+          </button>
+        )}
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: '2fr 1fr', alignItems: 'start' }}>

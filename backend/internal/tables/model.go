@@ -11,7 +11,7 @@ type Table struct {
 	ZoneName          string  `json:"zone_name,omitempty"`
 	Number            string  `json:"number"`
 	Capacity          int     `json:"capacity"`
-	Status            string  `json:"status"` // libre | ocupada | cuenta_solicitada | limpieza
+	Status            string  `json:"status"` // libre | ocupada | cuenta_solicitada
 	Active            bool    `json:"active"`
 	CurrentWaiterID   *int    `json:"current_waiter_id"`
 	CurrentWaiterName *string `json:"current_waiter_name,omitempty"`

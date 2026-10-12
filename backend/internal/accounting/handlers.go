@@ -22,29 +22,36 @@ func NewHandler(svc *Service, audit *audit.Logger) *Handler {
 	return &Handler{svc: svc, audit: audit}
 }
 
-// RegisterRoutes: por especificación, Contaduría es de solo lectura para el
-// rol "contador" y de administración completa para "admin" (el rol
-// "gerente" no aparece listado con acceso a este módulo en las
-// especificaciones funcionales).
+// RegisterRoutes: Contaduría la administran "admin" y "contador" (alta,
+// edición y baja de gastos, compras, inventario y facturas); el rol
+// "gerente" no tiene acceso a este módulo. Toda alta/edición/baja queda en
+// la bitácora de auditoría.
 func (h *Handler) RegisterRoutes(r chi.Router) {
-	manage := authn.RequireRole(authn.RoleAdmin)
+	manage := authn.RequireRole(authn.RoleAdmin, authn.RoleContador)
 	view := authn.RequireRole(authn.RoleAdmin, authn.RoleContador)
 
 	r.Route("/expenses", func(r chi.Router) {
 		r.With(view).Get("/", h.listExpenses)
 		r.With(view).Get("/export", h.exportExpenses)
 		r.With(manage).Post("/", h.createExpense)
+		r.With(manage).Put("/{id}", h.updateExpense)
+		r.With(manage).Delete("/{id}", h.deleteExpense)
 	})
 
 	r.Route("/purchases", func(r chi.Router) {
 		r.With(view).Get("/", h.listPurchases)
 		r.With(manage).Post("/", h.createPurchase)
+		r.With(manage).Put("/{id}", h.updatePurchase)
+		r.With(manage).Delete("/{id}", h.deletePurchase)
 	})
 
 	r.Route("/inventory", func(r chi.Router) {
 		r.With(view).Get("/", h.listInventory)
 		r.With(manage).Post("/", h.createInventoryItem)
+		r.With(manage).Put("/{id}", h.updateInventoryItem)
+		r.With(manage).Delete("/{id}", h.deleteInventoryItem)
 		r.With(manage).Post("/{id}/movements", h.addMovement)
+		r.With(manage).Delete("/{id}/movements/{movementId}", h.deleteMovement)
 		r.With(view).Get("/{id}/movements", h.listMovements)
 	})
 
@@ -52,6 +59,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.With(view).Get("/", h.listInvoices)
 		r.With(view).Get("/{id}", h.getInvoice)
 		r.With(manage).Post("/", h.createInvoice)
+		r.With(manage).Post("/{id}/cancel", h.cancelInvoice)
 	})
 
 	r.Route("/reports", func(r chi.Router) {
@@ -99,7 +107,131 @@ func (h *Handler) createExpense(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	h.audit.Log(claims.UserID, "create", "expense", e.ID, e.Description)
 	httpx.JSON(w, http.StatusCreated, e)
+}
+
+func (h *Handler) updateExpense(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var in ExpenseInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+	e, err := h.svc.UpdateExpense(id, in)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "update", "expense", id, e.Description)
+	httpx.JSON(w, http.StatusOK, e)
+}
+
+func (h *Handler) deleteExpense(w http.ResponseWriter, r *http.Request) {
+	h.deleteGeneric(w, r, "expense", h.svc.DeleteExpense)
+}
+
+func (h *Handler) updatePurchase(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var in PurchaseInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+	p, err := h.svc.UpdatePurchase(id, in)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "update", "purchase", id, p.Supplier)
+	httpx.JSON(w, http.StatusOK, p)
+}
+
+func (h *Handler) deletePurchase(w http.ResponseWriter, r *http.Request) {
+	h.deleteGeneric(w, r, "purchase", h.svc.DeletePurchase)
+}
+
+func (h *Handler) updateInventoryItem(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var in InventoryItemInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+	item, err := h.svc.UpdateInventoryItem(id, in)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "update", "inventory_item", id, item.Name)
+	httpx.JSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) deleteInventoryItem(w http.ResponseWriter, r *http.Request) {
+	h.deleteGeneric(w, r, "inventory_item", h.svc.DeleteInventoryItem)
+}
+
+func (h *Handler) deleteMovement(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	mid, err2 := strconv.Atoi(chi.URLParam(r, "movementId"))
+	if err != nil || err2 != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	item, err := h.svc.DeleteMovement(id, mid)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "delete_movement", "inventory_item", id, strconv.Itoa(mid))
+	httpx.JSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) cancelInvoice(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	inv, err := h.svc.CancelInvoice(id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "cancel", "invoice", id, "")
+	httpx.JSON(w, http.StatusOK, inv)
+}
+
+func (h *Handler) deleteGeneric(w http.ResponseWriter, r *http.Request, entity string, del func(int) error) {
+	id, err := idParam(r)
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if err := del(id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "delete", entity, id, "")
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) listPurchases(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +255,7 @@ func (h *Handler) createPurchase(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	h.audit.Log(claims.UserID, "create", "purchase", p.ID, p.Supplier)
 	httpx.JSON(w, http.StatusCreated, p)
 }
 
@@ -146,6 +279,8 @@ func (h *Handler) createInventoryItem(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "create", "inventory_item", item.ID, item.Name)
 	httpx.JSON(w, http.StatusCreated, item)
 }
 

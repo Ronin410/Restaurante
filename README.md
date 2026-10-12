@@ -79,10 +79,15 @@ igual de bien ahí. Por eso:
 | **cajero** | Cobro, cuentas, sus turnos y cortes de caja |
 | **mesero** | Captura de comandas, estado de mesas |
 | **cocina** | KDS (comandas entrantes), marcar como listo/preparando |
-| **contador** | Solo lectura: reportes financieros, facturación, gastos |
+| **contador** | Contaduría completa: alta, edición y baja de gastos, compras, inventario y facturas; lectura de reportes, KPIs y cortes |
 
 Cada rol tiene su propio inicio de sesión (usuario/contraseña individual) y
 el backend hace cumplir los permisos en cada endpoint (no solo en la UI).
+
+> Documentación funcional: [Manual de uso](docs/MANUAL_DE_USO.md) · [Cómo se calculan los KPIs](docs/KPIS.md).
+>
+> **Flujo de mesa simplificado:** no existe estado de "limpieza". Al cerrar la última cuenta de
+> una mesa, esta queda *libre* automáticamente.
 
 ### Zonas y mesas personalizables
 

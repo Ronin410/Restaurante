@@ -323,3 +323,21 @@ func (s *Store) ListByTable(tableID int) ([]Account, error) {
 	}
 	return out, nil
 }
+
+// TableHasPendingBilling indica si la mesa todavía tiene algo por cobrar:
+// otra cuenta abierta, o partidas vivas que no se han asignado a ninguna
+// cuenta (consumo posterior a "Generar cuenta").
+func (s *Store) TableHasPendingBilling(tableID int) (bool, error) {
+	var open int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM accounts WHERE table_id = ? AND status = 'abierta'`, tableID).Scan(&open); err != nil {
+		return false, err
+	}
+	if open > 0 {
+		return true, nil
+	}
+	var loose int
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id = oi.order_id
+		WHERE o.table_id = ? AND oi.account_id IS NULL AND oi.status != 'cancelado'`, tableID).Scan(&loose)
+	return loose > 0, err
+}

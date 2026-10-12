@@ -249,10 +249,6 @@ a {
 .table-tile[data-status='cuenta_solicitada'] {
   border-color: var(--color-warn);
 }
-.table-tile[data-status='limpieza'] {
-  border-color: var(--color-text-muted);
-  opacity: 0.7;
-}
 
 .table-tile[data-active='false'] {
   opacity: 0.45;

@@ -11,7 +11,6 @@ const STATUS_LABEL: Record<string, string> = {
   libre: 'Libre',
   ocupada: 'Ocupada',
   cuenta_solicitada: 'Cuenta solicitada',
-  limpieza: 'En limpieza',
 }
 
 export function TablesPage() {

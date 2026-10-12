@@ -21,13 +21,22 @@ type ShiftFinder interface {
 	OpenShiftIDForCashier(cashierID int) (*int, error)
 }
 
-type Service struct {
-	store  *Store
-	shifts ShiftFinder
+// TableReleaser desacopla accounts del módulo tables: al cerrar la última
+// cuenta pendiente de una mesa, la mesa se libera sola (vuelve a "libre").
+// El sistema no maneja ningún estado de limpieza: la mesa queda disponible
+// de inmediato y el personal la prepara por su cuenta.
+type TableReleaser interface {
+	Release(tableID int) error
 }
 
-func NewService(store *Store, shifts ShiftFinder) *Service {
-	return &Service{store: store, shifts: shifts}
+type Service struct {
+	store    *Store
+	shifts   ShiftFinder
+	releaser TableReleaser
+}
+
+func NewService(store *Store, shifts ShiftFinder, releaser TableReleaser) *Service {
+	return &Service{store: store, shifts: shifts, releaser: releaser}
 }
 
 func (s *Service) GenerateAccount(tableID int) (Account, error) {
@@ -119,7 +128,24 @@ func (s *Service) CloseAccount(id, closedBy int) (Account, error) {
 	if account.Balance > balanceTolerance {
 		return Account{}, fmt.Errorf("%w: la cuenta tiene un saldo pendiente de %.2f", ErrValidation, account.Balance)
 	}
-	return s.store.CloseAccount(id, closedBy)
+	closed, err := s.store.CloseAccount(id, closedBy)
+	if err != nil {
+		return Account{}, err
+	}
+	// Libera la mesa solo si ya no queda nada por cobrar en ella: ninguna
+	// otra cuenta abierta (cuentas divididas) ni partidas sin cuenta.
+	if s.releaser != nil && closed.TableID != nil {
+		pending, err := s.store.TableHasPendingBilling(*closed.TableID)
+		if err != nil {
+			return Account{}, err
+		}
+		if !pending {
+			if err := s.releaser.Release(*closed.TableID); err != nil {
+				return Account{}, err
+			}
+		}
+	}
+	return closed, nil
 }
 
 func (s *Service) GetTicket(id int) (Ticket, error) {
