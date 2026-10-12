@@ -27,6 +27,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/zones", func(r chi.Router) {
 		r.Get("/", h.listZones)
 		r.With(manage).Post("/", h.createZone)
+		r.With(manage).Put("/{id}", h.updateZone)
+		r.With(manage).Delete("/{id}", h.deleteZone)
 	})
 
 	r.Route("/tables", func(r chi.Router) {
@@ -34,6 +36,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Get("/{id}", h.getTable)
 		r.With(manage).Post("/", h.createTable)
 		r.With(manage).Put("/{id}", h.updateTable)
+		r.With(manage).Delete("/{id}", h.deleteTable)
+		r.With(manage).Post("/{id}/reactivate", h.reactivateTable)
 		r.Post("/{id}/open", h.open)
 		r.Post("/{id}/status", h.setStatus)
 		r.Post("/{id}/assign", h.assignWaiter)
@@ -66,8 +70,44 @@ func (h *Handler) createZone(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusCreated, z)
 }
 
+func (h *Handler) updateZone(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	var in ZoneInput
+	if err := httpx.Decode(r, &in); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "cuerpo inválido")
+		return
+	}
+	z, err := h.svc.UpdateZone(id, in)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "update", "zone", id, z.Name)
+	httpx.JSON(w, http.StatusOK, z)
+}
+
+func (h *Handler) deleteZone(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	if err := h.svc.DeleteZone(id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "delete", "zone", id, "")
+	httpx.JSON(w, http.StatusNoContent, nil)
+}
+
 func (h *Handler) listTables(w http.ResponseWriter, r *http.Request) {
-	list, err := h.svc.ListTables()
+	list, err := h.svc.ListTables(r.URL.Query().Get("include_inactive") == "1")
 	if err != nil {
 		httpx.Error(w, http.StatusInternalServerError, err.Error())
 		return
@@ -119,6 +159,38 @@ func (h *Handler) updateTable(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	httpx.JSON(w, http.StatusOK, t)
+}
+
+func (h *Handler) deleteTable(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	t, err := h.svc.Deactivate(id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "delete", "table", id, "")
+	httpx.JSON(w, http.StatusOK, t)
+}
+
+func (h *Handler) reactivateTable(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		httpx.Error(w, http.StatusBadRequest, "id inválido")
+		return
+	}
+	t, err := h.svc.Reactivate(id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	claims, _ := authn.FromContext(r.Context())
+	h.audit.Log(claims.UserID, "reactivate", "table", id, "")
 	httpx.JSON(w, http.StatusOK, t)
 }
 
@@ -247,9 +319,9 @@ func idParam(r *http.Request, name string) (int, error) {
 
 func writeErr(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrValidation):
+	case errors.Is(err, ErrValidation), errors.Is(err, ErrZoneHasTables):
 		httpx.Error(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrZoneNotFound):
 		httpx.Error(w, http.StatusNotFound, err.Error())
 	default:
 		httpx.Error(w, http.StatusInternalServerError, err.Error())

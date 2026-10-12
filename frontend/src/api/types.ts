@@ -83,6 +83,7 @@ export interface RestaurantTable {
   number: string
   capacity: number
   status: TableStatus
+  active: boolean
   current_waiter_id: number | null
   current_waiter_name?: string | null
   opened_at: string | null

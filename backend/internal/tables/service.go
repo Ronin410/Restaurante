@@ -27,8 +27,19 @@ func (s *Service) CreateZone(in ZoneInput) (Zone, error) {
 	return s.store.CreateZone(in)
 }
 
-func (s *Service) ListTables() ([]Table, error) {
-	list, err := s.store.ListTables()
+func (s *Service) UpdateZone(id int, in ZoneInput) (Zone, error) {
+	if in.Name == "" {
+		return Zone{}, fmt.Errorf("%w: nombre obligatorio", ErrValidation)
+	}
+	return s.store.UpdateZone(id, in)
+}
+
+func (s *Service) DeleteZone(id int) error {
+	return s.store.DeleteZone(id)
+}
+
+func (s *Service) ListTables(includeInactive bool) ([]Table, error) {
+	list, err := s.store.ListTables(includeInactive)
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +89,9 @@ func (s *Service) Open(id, waiterID int) (Table, error) {
 	if err != nil {
 		return Table{}, err
 	}
+	if !t.Active {
+		return Table{}, fmt.Errorf("%w: la mesa fue eliminada; reactívala primero", ErrValidation)
+	}
 	if t.Status != "libre" {
 		return Table{}, fmt.Errorf("%w: la mesa no está libre", ErrValidation)
 	}
@@ -113,4 +127,22 @@ func (s *Service) Transfer(tableID int, toWaiterID, authorizedBy int) (TransferR
 		return TransferRecord{}, err
 	}
 	return s.store.Transfer(tableID, current.CurrentWaiterID, toWaiterID, authorizedBy)
+}
+
+// Deactivate "elimina" una mesa. No se permite si está ocupada o con
+// cuenta solicitada, para no perder de vista una comanda en curso; hay que
+// liberarla (o cerrar su cuenta) antes de eliminarla.
+func (s *Service) Deactivate(id int) (Table, error) {
+	t, err := s.store.GetTable(id)
+	if err != nil {
+		return Table{}, err
+	}
+	if t.Status == "ocupada" || t.Status == "cuenta_solicitada" {
+		return Table{}, fmt.Errorf("%w: libera la mesa antes de eliminarla", ErrValidation)
+	}
+	return s.store.Deactivate(id)
+}
+
+func (s *Service) Reactivate(id int) (Table, error) {
+	return s.store.Reactivate(id)
 }

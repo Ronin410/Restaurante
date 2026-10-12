@@ -86,10 +86,16 @@ export const CatalogApi = {
 export const TablesApi = {
   zones: () => apiFetch<Zone[]>('/zones/'),
   createZone: (name: string) => apiFetch<Zone>('/zones/', { method: 'POST', body: { name } }),
-  list: () => apiFetch<RestaurantTable[]>('/tables/'),
+  updateZone: (id: number, name: string) => apiFetch<Zone>(`/zones/${id}`, { method: 'PUT', body: { name } }),
+  deleteZone: (id: number) => apiFetch<void>(`/zones/${id}`, { method: 'DELETE' }),
+  list: (includeInactive = false) => apiFetch<RestaurantTable[]>(`/tables/${includeInactive ? '?include_inactive=1' : ''}`),
   get: (id: number) => apiFetch<RestaurantTable>(`/tables/${id}`),
   create: (input: { zone_id: number; number: string; capacity: number }) =>
     apiFetch<RestaurantTable>('/tables/', { method: 'POST', body: input }),
+  update: (id: number, input: { zone_id: number; number: string; capacity: number }) =>
+    apiFetch<RestaurantTable>(`/tables/${id}`, { method: 'PUT', body: input }),
+  remove: (id: number) => apiFetch<RestaurantTable>(`/tables/${id}`, { method: 'DELETE' }),
+  reactivate: (id: number) => apiFetch<RestaurantTable>(`/tables/${id}/reactivate`, { method: 'POST' }),
   open: (id: number, waiterId?: number) =>
     apiFetch<RestaurantTable>(`/tables/${id}/open`, { method: 'POST', body: waiterId ? { waiter_id: waiterId } : {} }),
   setStatus: (id: number, status: string) =>

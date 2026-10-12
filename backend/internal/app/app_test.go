@@ -93,7 +93,28 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	env.seedCatalog()
 	env.seedTable()
+	env.fixSequences()
 	return env
+}
+
+// fixSequences sincroniza las secuencias de identidad de Postgres después
+// de que seedCatalog/seedTable insertan filas con id explícito (para tener
+// ids predecibles en las aserciones). Postgres no avanza la secuencia en
+// un INSERT con id explícito, así que sin esto el primer INSERT normal
+// (dejando que la base genere el id) choca con una llave ya usada.
+func (e *testEnv) fixSequences() {
+	e.t.Helper()
+	tablesWithExplicitSeedIDs := []string{
+		"zones", "tables_", "categories", "products", "modifier_groups", "modifier_options",
+	}
+	for _, table := range tablesWithExplicitSeedIDs {
+		_, err := e.db.Exec(fmt.Sprintf(
+			`SELECT setval(pg_get_serial_sequence('%s', 'id'), COALESCE((SELECT MAX(id) FROM %s), 1))`, table, table,
+		))
+		if err != nil {
+			e.t.Fatalf("sincronizando secuencia de %s: %v", table, err)
+		}
+	}
 }
 
 func (e *testEnv) seedUser(name, email, password, role string) int {
@@ -562,4 +583,105 @@ func TestExpensesAndPnL(t *testing.T) {
 	if pnl.Gastos != 5000 {
 		t.Fatalf("gastos esperados 5000, obtuve %.2f", pnl.Gastos)
 	}
+}
+
+// TestZonesAndTablesManagement cubre que mesas y zonas se puedan crear,
+// renombrar/editar y "eliminar" (desactivar en el caso de mesas, para no
+// perder el historial; borrar de verdad en el caso de zonas vacías).
+func TestZonesAndTablesManagement(t *testing.T) {
+	env := newTestEnv(t)
+
+	t.Run("renombrar zona", func(t *testing.T) {
+		var zone map[string]interface{}
+		code := env.do(http.MethodPut, "/api/v1/zones/1", env.tokens["admin"], map[string]string{"name": "Interior renombrado"}, &zone)
+		if code != http.StatusOK || zone["name"] != "Interior renombrado" {
+			t.Fatalf("renombrar zona falló: code=%d zone=%v", code, zone)
+		}
+	})
+
+	t.Run("mesero no puede crear zonas", func(t *testing.T) {
+		code := env.do(http.MethodPost, "/api/v1/zones/", env.tokens["mesero"], map[string]string{"name": "Terraza"}, nil)
+		if code != http.StatusForbidden {
+			t.Fatalf("esperaba 403, obtuve %d", code)
+		}
+	})
+
+	var terraza struct {
+		ID int `json:"id"`
+	}
+	code := env.do(http.MethodPost, "/api/v1/zones/", env.tokens["admin"], map[string]string{"name": "Terraza"}, &terraza)
+	if code != http.StatusCreated {
+		t.Fatalf("crear zona falló: code=%d", code)
+	}
+
+	t.Run("no se puede eliminar una zona con mesas", func(t *testing.T) {
+		code := env.do(http.MethodDelete, "/api/v1/zones/1", env.tokens["admin"], nil, nil)
+		if code != http.StatusBadRequest {
+			t.Fatalf("esperaba 400 (zona 1 tiene la mesa sembrada), obtuve %d", code)
+		}
+	})
+
+	t.Run("sí se puede eliminar una zona vacía", func(t *testing.T) {
+		code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/zones/%d", terraza.ID), env.tokens["admin"], nil, nil)
+		if code != http.StatusNoContent {
+			t.Fatalf("esperaba 204, obtuve %d", code)
+		}
+	})
+
+	var newTable struct {
+		ID     int  `json:"id"`
+		Active bool `json:"active"`
+	}
+	code = env.do(http.MethodPost, "/api/v1/tables/", env.tokens["admin"], map[string]interface{}{
+		"zone_id": 1, "number": "9", "capacity": 2,
+	}, &newTable)
+	if code != http.StatusCreated || !newTable.Active {
+		t.Fatalf("crear mesa falló: code=%d table=%+v", code, newTable)
+	}
+
+	t.Run("no se puede eliminar una mesa ocupada", func(t *testing.T) {
+		env.do(http.MethodPost, fmt.Sprintf("/api/v1/tables/%d/open", newTable.ID), env.tokens["mesero"], map[string]interface{}{}, nil)
+		code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/tables/%d", newTable.ID), env.tokens["admin"], nil, nil)
+		if code != http.StatusBadRequest {
+			t.Fatalf("esperaba 400 por mesa ocupada, obtuve %d", code)
+		}
+		// la liberamos para el resto de la prueba
+		env.do(http.MethodPost, fmt.Sprintf("/api/v1/tables/%d/status", newTable.ID), env.tokens["mesero"], map[string]string{"status": "libre"}, nil)
+	})
+
+	t.Run("eliminar (desactivar) una mesa libre la saca del listado por defecto", func(t *testing.T) {
+		var deactivated map[string]interface{}
+		code := env.do(http.MethodDelete, fmt.Sprintf("/api/v1/tables/%d", newTable.ID), env.tokens["admin"], nil, &deactivated)
+		if code != http.StatusOK || deactivated["active"] != false {
+			t.Fatalf("eliminar mesa falló: code=%d table=%v", code, deactivated)
+		}
+
+		var list []map[string]interface{}
+		env.do(http.MethodGet, "/api/v1/tables/", env.tokens["admin"], nil, &list)
+		for _, tbl := range list {
+			if int(tbl["id"].(float64)) == newTable.ID {
+				t.Fatalf("la mesa eliminada no debería salir en el listado por defecto")
+			}
+		}
+
+		var listAll []map[string]interface{}
+		env.do(http.MethodGet, "/api/v1/tables/?include_inactive=1", env.tokens["admin"], nil, &listAll)
+		found := false
+		for _, tbl := range listAll {
+			if int(tbl["id"].(float64)) == newTable.ID {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("la mesa eliminada sí debería salir con include_inactive=1")
+		}
+	})
+
+	t.Run("reactivar una mesa eliminada", func(t *testing.T) {
+		var reactivated map[string]interface{}
+		code := env.do(http.MethodPost, fmt.Sprintf("/api/v1/tables/%d/reactivate", newTable.ID), env.tokens["admin"], nil, &reactivated)
+		if code != http.StatusOK || reactivated["active"] != true {
+			t.Fatalf("reactivar mesa falló: code=%d table=%v", code, reactivated)
+		}
+	})
 }

@@ -9,8 +9,11 @@ por roles y reportes en tiempo real. Implementado a partir de
 - **Frontend:** React + TypeScript (Vite) — [`frontend/`](frontend/)
 - **Base de datos:** PostgreSQL
 
-¿Quieres correrlo con **Podman** (sin `podman-compose`, tres contenedores
-en puertos no estándar)? Ve directo a **[PODMAN.md](PODMAN.md)**.
+¿Quieres correrlo en contenedores? Tres contenedores (Postgres, backend,
+frontend) en puertos no estándar, documentados dos formas:
+**[PODMAN.md](PODMAN.md)** (comandos `podman run` explícitos, sin
+`podman-compose`) o **[DOCKER.md](DOCKER.md)** (`docker compose up`, un
+solo comando).
 
 ---
 
@@ -35,13 +38,37 @@ PostgreSQL
   que no hay cientos de consultas reescritas por el cambio de motor.
 - **Frontend:** React 19 + TypeScript, Vite, `react-router-dom` para rutas,
   `@tanstack/react-query` para datos remotos, CSS propio (sin librería de
-  componentes) con variables de tema claro/oscuro.
+  componentes) con variables de tema claro/oscuro. **Pensado primero para
+  tablet** (el uso principal en el piso de venta), con escritorio como
+  segundo uso: ver "Diseño pensado para tablet" más abajo.
 - **Módulos del backend** (cada uno en `internal/<módulo>` con
   `model.go` / `store.go` / `service.go` / `handlers.go`):
   `employees`, `catalog`, `tables`, `orders`, `accounts`, `cashcuts`,
   `accounting`, `kpis`, `audit`, más `authn` (JWT/roles) y `dbx` (conexión +
   migraciones). `internal/app` ensambla el router completo; lo usan tanto
   `cmd/server` como las pruebas de integración.
+
+### 1.1 Diseño pensado para tablet
+
+El uso principal es desde una tablet en el piso de venta (mesero tomando
+comandas, cajero cobrando), no desde escritorio — aunque sigue funcionando
+igual de bien ahí. Por eso:
+
+- **Menú colapsable:** en pantallas angostas (`frontend/src/index.css`,
+  punto de quiebre en 960px) la barra lateral se vuelve un cajón que se
+  abre con el botón de hamburguesa (barra superior) y se cierra solo al
+  elegir una sección o tocar fuera, para no robarle pantalla al mapa de
+  mesas o a la comanda. En pantallas anchas (escritorio) la barra lateral
+  vuelve a quedar fija, como antes.
+- **Objetivos táctiles grandes:** botones, campos de formulario y fichas de
+  mesa con al menos 44px de alto (guía de Apple/Google para tocar con el
+  dedo sin fallar), en vez de los controles compactos pensados para mouse.
+- **Limitación conocida:** las tablas de datos con muchas columnas
+  (Personal, reportes de Contaduría) se desplazan horizontalmente en
+  pantallas angostas en vez de reacomodarse en tarjetas — funcionan, pero
+  no son tan cómodas en celular. Es de menor prioridad porque esas
+  pantallas las usa más que nada el administrador/gerente, típicamente
+  desde una tablet en horizontal o una computadora.
 
 ### Roles y permisos
 
@@ -57,13 +84,28 @@ PostgreSQL
 Cada rol tiene su propio inicio de sesión (usuario/contraseña individual) y
 el backend hace cumplir los permisos en cada endpoint (no solo en la UI).
 
+### Zonas y mesas personalizables
+
+Admin/gerente pueden crear, renombrar y eliminar zonas (interior, terraza,
+etc.) y mesas desde la pantalla de Mesas → "Administrar zonas y mesas":
+
+- **Mesas:** "eliminar" las desactiva en vez de borrarlas de verdad, para no
+  perder el historial de comandas/cuentas que ya las referencian; quedan
+  fuera del mapa de mesas y no se pueden volver a abrir hasta
+  reactivarlas (botón "Reactivar" en la misma pantalla, marcando
+  "Mostrar mesas eliminadas"). No se puede eliminar una mesa
+  ocupada/con cuenta solicitada — hay que liberarla primero.
+- **Zonas:** sí se pueden borrar de verdad, pero solo cuando ya no tienen
+  ninguna mesa asignada (ni activa ni eliminada), para no dejar mesas
+  huérfanas apuntando a una zona que ya no existe.
+
 ---
 
 ## 2. Cómo correr el proyecto en desarrollo
 
-Con Podman (recomendado, no requiere instalar Go/Node/Postgres a mano):
-**[PODMAN.md](PODMAN.md)**. Lo de abajo es para correrlo directo en tu
-máquina.
+Con contenedores (recomendado, no requiere instalar Go/Node/Postgres a
+mano): **[PODMAN.md](PODMAN.md)** o **[DOCKER.md](DOCKER.md)**. Lo de
+abajo es para correrlo directo en tu máquina.
 
 ### Backend
 

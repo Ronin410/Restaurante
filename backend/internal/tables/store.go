@@ -8,6 +8,8 @@ import (
 )
 
 var ErrNotFound = errors.New("mesa no encontrada")
+var ErrZoneNotFound = errors.New("zona no encontrada")
+var ErrZoneHasTables = errors.New("la zona tiene mesas asociadas; muévelas o elimínalas primero")
 
 type Store struct {
 	db *dbx.DB
@@ -43,20 +45,60 @@ func (s *Store) CreateZone(in ZoneInput) (Zone, error) {
 	return Zone{ID: id, Name: in.Name}, nil
 }
 
-const tableCols = `t.id, t.zone_id, z.name, t.number, t.capacity, t.status, t.current_waiter_id, u.name, t.opened_at, t.joined_with`
+func (s *Store) UpdateZone(id int, in ZoneInput) (Zone, error) {
+	res, err := s.db.Exec(`UPDATE zones SET name = ? WHERE id = ?`, in.Name, id)
+	if err != nil {
+		return Zone{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return Zone{}, ErrZoneNotFound
+	}
+	return Zone{ID: id, Name: in.Name}, nil
+}
+
+// DeleteZone borra la zona de verdad (a diferencia de las mesas, nada más
+// las referencia) siempre que ya no tenga ninguna mesa asignada, activa o
+// no: si la dejáramos borrar con mesas todavía apuntando a ella por
+// zone_id, quedarían huérfanas.
+func (s *Store) DeleteZone(id int) error {
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(1) FROM tables_ WHERE zone_id = ?`, id).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrZoneHasTables
+	}
+	res, err := s.db.Exec(`DELETE FROM zones WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrZoneNotFound
+	}
+	return nil
+}
+
+const tableCols = `t.id, t.zone_id, z.name, t.number, t.capacity, t.status, t.active, t.current_waiter_id, u.name, t.opened_at, t.joined_with`
 
 func (s *Store) scanTable(row interface{ Scan(...interface{}) error }) (Table, error) {
 	var t Table
 	var waiterName *string
-	if err := row.Scan(&t.ID, &t.ZoneID, &t.ZoneName, &t.Number, &t.Capacity, &t.Status, &t.CurrentWaiterID, &waiterName, &t.OpenedAt, &t.JoinedWith); err != nil {
+	var activeInt int
+	if err := row.Scan(&t.ID, &t.ZoneID, &t.ZoneName, &t.Number, &t.Capacity, &t.Status, &activeInt, &t.CurrentWaiterID, &waiterName, &t.OpenedAt, &t.JoinedWith); err != nil {
 		return t, err
 	}
+	t.Active = activeInt == 1
 	t.CurrentWaiterName = waiterName
 	return t, nil
 }
 
-func (s *Store) ListTables() ([]Table, error) {
-	rows, err := s.db.Query(`SELECT ` + tableCols + ` FROM tables_ t JOIN zones z ON z.id = t.zone_id LEFT JOIN users u ON u.id = t.current_waiter_id ORDER BY z.name, t.number`)
+func (s *Store) ListTables(includeInactive bool) ([]Table, error) {
+	query := `SELECT ` + tableCols + ` FROM tables_ t JOIN zones z ON z.id = t.zone_id LEFT JOIN users u ON u.id = t.current_waiter_id`
+	if !includeInactive {
+		query += ` WHERE t.active = 1`
+	}
+	query += ` ORDER BY z.name, t.number`
+	rows, err := s.db.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -175,4 +217,23 @@ func (s *Store) Transfer(tableID int, fromWaiterID *int, toWaiterID, authorizedB
 	var tr TransferRecord
 	err = row.Scan(&tr.ID, &tr.TableID, &tr.FromWaiterID, &tr.ToWaiterID, &tr.AuthorizedBy, &tr.CreatedAt)
 	return tr, err
+}
+
+// Deactivate "elimina" una mesa sin borrar su historial (ver nota de la
+// migración 0002): deja de aparecer en el mapa de mesas y no se puede abrir
+// de nuevo hasta reactivarla.
+func (s *Store) Deactivate(id int) (Table, error) {
+	_, err := s.db.Exec(`UPDATE tables_ SET active = 0 WHERE id = ?`, id)
+	if err != nil {
+		return Table{}, err
+	}
+	return s.GetTable(id)
+}
+
+func (s *Store) Reactivate(id int) (Table, error) {
+	_, err := s.db.Exec(`UPDATE tables_ SET active = 1 WHERE id = ?`, id)
+	if err != nil {
+		return Table{}, err
+	}
+	return s.GetTable(id)
 }

@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { TablesApi } from '../api/endpoints'
-import { Field } from '../components/Field'
 import type { RestaurantTable } from '../api/types'
 import { formatOccupiedMinutes } from '../utils/money'
 import { useAuth } from '../auth/AuthContext'
+import { TableManagementModal } from '../components/TableManagementModal'
 
 const STATUS_LABEL: Record<string, string> = {
   libre: 'Libre',
@@ -18,14 +18,13 @@ export function TablesPage() {
   const { hasRole } = useAuth()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [showNewTable, setShowNewTable] = useState(false)
+  const [showManage, setShowManage] = useState(false)
 
   const { data: tables, isLoading, error } = useQuery({
     queryKey: ['tables'],
-    queryFn: TablesApi.list,
+    queryFn: () => TablesApi.list(),
     refetchInterval: 10000,
   })
-  const { data: zones } = useQuery({ queryKey: ['zones'], queryFn: TablesApi.zones })
 
   const openMutation = useMutation({
     mutationFn: (id: number) => TablesApi.open(id),
@@ -55,14 +54,24 @@ export function TablesPage() {
       <div className="toolbar">
         <h2 style={{ margin: 0 }}>Mesas</h2>
         {hasRole('admin', 'gerente') && (
-          <button className="btn" onClick={() => setShowNewTable(true)}>
-            + Nueva mesa
+          <button className="btn" onClick={() => setShowManage(true)}>
+            Administrar zonas y mesas
           </button>
         )}
       </div>
 
       {isLoading && <p>Cargando…</p>}
       {error && <div className="error-banner">{(error as Error).message}</div>}
+      {!isLoading && (tables ?? []).length === 0 && (
+        <div className="empty-state">
+          <p>Todavía no hay mesas registradas.</p>
+          {hasRole('admin', 'gerente') && (
+            <button className="btn primary" onClick={() => setShowManage(true)}>
+              Crear la primera zona y mesa
+            </button>
+          )}
+        </div>
+      )}
 
       {[...grouped.entries()].map(([zoneName, list]) => (
         <div key={zoneName} style={{ marginBottom: '1.25rem' }}>
@@ -90,56 +99,7 @@ export function TablesPage() {
         </div>
       ))}
 
-      {showNewTable && zones && (
-        <NewTableModal zones={zones} onClose={() => setShowNewTable(false)} />
-      )}
-    </div>
-  )
-}
-
-function NewTableModal({ zones, onClose }: { zones: { id: number; name: string }[]; onClose: () => void }) {
-  const queryClient = useQueryClient()
-  const [zoneId, setZoneId] = useState(zones[0]?.id ?? 0)
-  const [number, setNumber] = useState('')
-  const [capacity, setCapacity] = useState(4)
-
-  const createMutation = useMutation({
-    mutationFn: () => TablesApi.create({ zone_id: zoneId, number, capacity }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tables'] })
-      onClose()
-    },
-  })
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Nueva mesa</h3>
-        <Field label="Zona">
-          <select value={zoneId} onChange={(e) => setZoneId(Number(e.target.value))}>
-            {zones.map((z) => (
-              <option key={z.id} value={z.id}>
-                {z.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Número">
-          <input value={number} onChange={(e) => setNumber(e.target.value)} />
-        </Field>
-        <Field label="Capacidad">
-          <input type="number" value={capacity} onChange={(e) => setCapacity(Number(e.target.value))} />
-        </Field>
-        {createMutation.isError && <div className="error-banner">{(createMutation.error as Error).message}</div>}
-        <div className="toolbar">
-          <button className="btn primary" disabled={!number} onClick={() => createMutation.mutate()}>
-            Crear
-          </button>
-          <button className="btn" onClick={onClose}>
-            Cancelar
-          </button>
-        </div>
-      </div>
+      {showManage && <TableManagementModal onClose={() => setShowManage(false)} />}
     </div>
   )
 }
