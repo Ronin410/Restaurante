@@ -89,6 +89,8 @@ el backend hace cumplir los permisos en cada endpoint (no solo en la UI).
 > **Flujo de mesa simplificado:** no existe estado de "limpieza". Al cerrar la última cuenta de
 > una mesa, esta queda *libre* automáticamente.
 
+> **Desplegar en la nube:** [guía paso a paso para Render](docs/RENDER.md) (incluye `render.yaml`).
+
 ### Para cualquier tipo de restaurante
 
 El sistema no está atado a un giro: el **nombre y el ícono del negocio** se cambian desde
