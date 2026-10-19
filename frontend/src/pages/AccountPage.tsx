@@ -50,6 +50,7 @@ export function NewAccountPage() {
 
 export function AccountPage() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const accountId = Number(id)
   const queryClient = useQueryClient()
   const { hasRole } = useAuth()
